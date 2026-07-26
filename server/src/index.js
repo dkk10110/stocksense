@@ -14,6 +14,11 @@ const { generalLimiter } = require('./middleware/rateLimit');
 
 const app = express();
 
+// Render (and most PaaS hosts) sit behind a reverse proxy that sets X-Forwarded-For.
+// Trusting exactly one hop lets express-rate-limit read the real client IP correctly
+// without blindly trusting an arbitrary chain of proxies.
+app.set('trust proxy', 1);
+
 app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
 app.use(express.json());
 app.use('/api', generalLimiter);
