@@ -1,0 +1,53 @@
+{
+  "name": "server",
+  "version": "1.0.0",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "nodemon src/index.js",
+    "start": "node src/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "seed": "node prisma/seed.js",
+    "ingest:prices": "node src/scripts/ingestPrices.js",
+    "scan:detectors": "node src/scripts/scanDetectors.js",
+    "generate:signals": "node src/scripts/generateSignals.js",
+    "cron:evening": "node src/jobs/eveningScan.js",
+    "cron:morning": "node src/jobs/morningRescore.js",
+    "cron:poll": "node src/jobs/positionPoll.js",
+    "cron:daily-checks": "node src/jobs/dailyPositionChecks.js",
+    "backup:db": "node src/scripts/backupDb.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
+    "@prisma/client": "^6.19.2",
+    "axios": "^1.18.1",
+    "bcryptjs": "^3.0.3",
+    "cheerio": "^1.2.0",
+    "cors": "^2.8.6",
+    "csv-parse": "^7.0.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.0",
+    "jsonwebtoken": "^9.0.3",
+    "node-cron": "^4.6.0",
+    "nodemailer": "^9.0.3",
+    "otplib": "^13.4.1",
+    "technicalindicators": "^3.1.0",
+    "yahoo-finance2": "^3.15.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14",
+    "prisma": "^6.19.2"
+  },
+  "overrides": {
+    "@hono/node-server": "^2.0.12"
+  }
+}

@@ -1,0 +1,185 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SignalType {
+  compression
+  catalyst
+  fallen
+  earnings
+  volume
+}
+
+enum AlertType {
+  forward_signal
+  catalyst_7day
+  catalyst_1day
+  rsi_reversal
+  gain_2
+  gain_5
+  gain_10
+  stop_loss
+  day12_time
+  earnings_day
+}
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  phone        String?
+  broker       String?
+  riskPref     String   @default("balanced") // conservative | balanced | aggressive
+  createdAt    DateTime @default(now())
+
+  resetTokenHash   String?
+  resetTokenExpiry DateTime?
+
+  watchlist    WatchlistItem[]
+  positions    Position[]
+  alerts       Alert[]
+  tradeHistory TradeHistory[]
+  settings     Settings?
+}
+
+model Signal {
+  id          String     @id @default(uuid())
+  name        String
+  symbol      String // NSE ticker, e.g. "BHEL" (Yahoo Finance symbol is `${symbol}.NS`)
+  sector      String
+  type        SignalType
+  price       Decimal    @db.Decimal(12, 2)
+  entryLow    Decimal    @db.Decimal(12, 2)
+  entryHigh   Decimal    @db.Decimal(12, 2)
+  target      Decimal    @db.Decimal(12, 2)
+  stop        Decimal    @db.Decimal(12, 2)
+  days        Int
+  confidence  Int
+  upside      Decimal    @db.Decimal(5, 2)
+  rsi         Int
+  headline    String
+  insight     String
+  indicators  Json // [{ label: string, color: 'purple'|'green'|'amber'|'red'|'blue' }]
+  catalysts   String[]
+  probBasis   Int
+  rr          Decimal    @db.Decimal(5, 2)
+  active      Boolean    @default(true)
+  scoreBreakdown Json? // per-layer composite-scorer output, for debugging/transparency — not shown in UI
+  createdAt   DateTime   @default(now())
+
+  watchlistItems WatchlistItem[]
+
+  @@index([type, active])
+}
+
+model WatchlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  symbol    String? // NSE ticker; null for stocks the user typed in manually and we haven't resolved yet
+  sector    String
+  price     Decimal  @db.Decimal(12, 2)
+  signalId  String?
+  signal    Signal?  @relation(fields: [signalId], references: [id])
+  createdAt DateTime @default(now())
+
+  positions Position[]
+
+  @@index([userId])
+}
+
+model Position {
+  id              String        @id @default(uuid())
+  userId          String
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  watchlistItemId String
+  watchlistItem   WatchlistItem @relation(fields: [watchlistItemId], references: [id])
+  name            String
+  sector          String
+  broker          String
+  buyPrice        Decimal       @db.Decimal(12, 2)
+  qty             Int
+  buyDate         DateTime
+  alertLevels     Int[]
+  alertsHit       Int[]
+  daysHeld        Int           @default(0)
+  stop            Decimal       @db.Decimal(12, 2)
+  currentPrice    Decimal       @db.Decimal(12, 2)
+  status          String        @default("open") // open | sold
+  stopAlertSent   Boolean       @default(false) // fires the stop-loss Telegram alert once, not on every price poll
+  day12AlertSent  Boolean       @default(false) // fires the day-12 time-expiry alert once
+  earningsAlertSent Boolean     @default(false) // fires the earnings-day alert once
+  createdAt       DateTime      @default(now())
+
+  @@index([userId, status])
+}
+
+model TradeHistory {
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name     String
+  gainPct  Decimal  @db.Decimal(6, 2)
+  pl       Decimal  @db.Decimal(12, 2)
+  soldDate DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Alert {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      AlertType
+  title     String
+  body      String
+  dismissed Boolean   @default(false)
+  createdAt DateTime  @default(now())
+
+  @@index([userId, dismissed])
+}
+
+model PriceHistory {
+  id     String   @id @default(uuid())
+  symbol String // NSE ticker, e.g. "BHEL"
+  date   DateTime @db.Date
+  open   Decimal  @db.Decimal(12, 2)
+  high   Decimal  @db.Decimal(12, 2)
+  low    Decimal  @db.Decimal(12, 2)
+  close  Decimal  @db.Decimal(12, 2)
+  volume BigInt
+  source String // "yahoo" | "nse_bhavcopy"
+
+  createdAt DateTime @default(now())
+
+  @@unique([symbol, date])
+  @@index([symbol])
+}
+
+model Settings {
+  id           String  @id @default(uuid())
+  userId       String  @unique
+  user         User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  alertsConfig Json // { safety2, mid5, full10, stopLoss, dayExpiry, compression, fallenAngel, catalyst: boolean }
+  swingWindow  Int     @default(15)
+  profitTarget String  @default("balanced") // conservative | balanced | aggressive
+}
+
+model JobRun {
+  id         String    @id @default(uuid())
+  jobName    String // evening_scan | morning_rescore | position_poll | daily_position_checks | db_backup
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  status     String    @default("running") // running | success | failed
+  summary    String? // short human-readable result, e.g. "2 signals generated"
+  error      String?
+
+  @@index([jobName, startedAt])
+}
