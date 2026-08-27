@@ -11,7 +11,9 @@ async function ingestPrices() {
   let totalSaved = 0;
   const failures = [];
 
-  const sinceDate = new Date(Date.now() - 400 * 24 * 60 * 60 * 1000); // ~52 weeks of trading days, for 52-week-high and 60-day-lookback detectors
+  // ~2 years: covers the 52-week-high / 60-day-lookback detectors AND leaves a usable walk-forward
+  // window for `npm run backtest` (PRD §9 wk2 wants 2 years of history).
+  const sinceDate = new Date(Date.now() - 760 * 24 * 60 * 60 * 1000);
 
   for (const symbol of symbols) {
     try {

@@ -1,6 +1,7 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
+const { lookupSymbol } = require('../services/marketData/yahooFinance');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -14,8 +15,20 @@ router.get('/', async (req, res) => {
   res.json(items);
 });
 
+// GET /api/watchlist/lookup?q=INFY — resolve a name/ticker to a real NSE symbol plus its
+// current name / sector / price / 52-week high, so the add-stock form can auto-fill.
+router.get('/lookup', async (req, res) => {
+  const q = req.query.q || req.query.symbol;
+  if (!q) return res.status(400).json({ error: 'A stock name or symbol is required.' });
+  try {
+    res.json(await lookupSymbol(q));
+  } catch {
+    res.status(404).json({ error: `Couldn't find "${q}" on NSE. Enter the details manually.` });
+  }
+});
+
 router.post('/', async (req, res) => {
-  const { name, sector, price, signalId } = req.body;
+  const { name, sector, price, signalId, symbol, high52w } = req.body;
   if (!name || !sector || price == null) {
     return res.status(400).json({ error: 'name, sector and price are required.' });
   }
@@ -26,7 +39,15 @@ router.post('/', async (req, res) => {
   }
 
   const item = await prisma.watchlistItem.create({
-    data: { userId: req.userId, name, sector, price, signalId: signalId || null },
+    data: {
+      userId: req.userId,
+      name,
+      sector,
+      price,
+      symbol: symbol ? String(symbol).toUpperCase().replace(/\.NS$/i, '') : null,
+      high52w: high52w != null && high52w !== '' ? high52w : null,
+      signalId: signalId || null,
+    },
   });
   res.status(201).json(item);
 });

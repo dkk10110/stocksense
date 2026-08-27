@@ -12,8 +12,9 @@ router.use(authLimiter);
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000; // 30 minutes
 
 const DEFAULT_ALERTS_CONFIG = {
-  safety2: true, mid5: true, full10: true, stopLoss: true,
-  dayExpiry: true, compression: true, fallenAngel: true, catalyst: true,
+  safety2: true, mid5: true, full10: true, stopLoss: true, dayExpiry: true,
+  compression: true, fallenAngel: true, catalyst: true, earningsPlay: true, volumeReversal: true,
+  sectorRotation: true, portfolioAdvice: true, discovery: true,
 };
 
 function signToken(user) {

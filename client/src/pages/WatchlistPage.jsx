@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
@@ -10,16 +10,21 @@ const SECTORS = ['Auto', 'Banking', 'Defence', 'Energy', 'FMCG', 'IT', 'Pharma',
 const TYPE_LABEL = { compression: 'tag-pre', catalyst: 'tag-cat', fallen: 'tag-fall', earnings: 'tag-earn', volume: 'tag-vol' };
 const TYPE_TEXT = { compression: 'Pre-breakout setup', catalyst: 'Catalyst play', fallen: 'Fallen angel reversal', earnings: 'Earnings play', volume: 'Volume reversal' };
 
+const EMPTY_FORM = { name: '', symbol: '', sector: SECTORS[0], price: '', high: '' };
+
 export default function WatchlistPage() {
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', sector: SECTORS[0], price: '', high: '' });
+  const [form, setForm] = useState(EMPTY_FORM);
   const [errors, setErrors] = useState({});
+  const [looking, setLooking] = useState(false);
+  const [lookupMsg, setLookupMsg] = useState(null); // { ok: boolean, text: string }
+  const lastLookedUp = useRef('');
   const navigate = useNavigate();
   const { openBuyModal } = useModal();
   const toast = useToast();
   const queryClient = useQueryClient();
 
-  const { data: items, isLoading } = useQuery({ queryKey: ['watchlist'], queryFn: () => api.get('/watchlist').then((r) => r.data) });
+  const { data: items = [], isLoading } = useQuery({ queryKey: ['watchlist'], queryFn: () => api.get('/watchlist').then((r) => r.data) });
   const { data: positions } = useQuery({ queryKey: ['positions'], queryFn: () => api.get('/positions').then((r) => r.data) });
   const heldIds = useMemo(() => new Set((positions || []).map((p) => p.watchlistItemId)), [positions]);
 
@@ -27,11 +32,46 @@ export default function WatchlistPage() {
     mutationFn: (payload) => api.post('/watchlist', payload),
     onSuccess: (res) => {
       queryClient.setQueryData(['watchlist'], (old = []) => [...old, res.data]);
-      setForm({ name: '', sector: SECTORS[0], price: '', high: '' });
+      setForm(EMPTY_FORM);
+      setLookupMsg(null);
+      lastLookedUp.current = '';
       setShowAdd(false);
       toast(`${res.data.name} added to watchlist.`);
     },
   });
+
+  const sectorOptions = useMemo(() => {
+    if (form.sector && !SECTORS.includes(form.sector)) return [form.sector, ...SECTORS];
+    return SECTORS;
+  }, [form.sector]);
+
+  // Resolves what the user typed (name or ticker) to a real NSE symbol and auto-fills
+  // sector / price / 52-week high. Fired on blur of the Stock/symbol field.
+  const runLookup = async () => {
+    const q = form.name.trim();
+    if (q.length < 2 || looking || q.toLowerCase() === lastLookedUp.current.toLowerCase()) return;
+    lastLookedUp.current = q;
+    setLooking(true);
+    setLookupMsg(null);
+    try {
+      const { data } = await api.get('/watchlist/lookup', { params: { q } });
+      setForm((f) => ({
+        ...f,
+        name: data.name || f.name,
+        symbol: data.symbol || '',
+        sector: data.sector || f.sector,
+        price: data.price != null ? String(data.price) : f.price,
+        high: data.high52w != null ? String(data.high52w) : f.high,
+      }));
+      setErrors({});
+      setLookupMsg({ ok: true, text: `Matched ${data.symbol} — details auto-filled. Edit any field if needed.` });
+    } catch (err) {
+      setForm((f) => ({ ...f, symbol: '' }));
+      setLookupMsg({ ok: false, text: err.response?.data?.error || 'Lookup failed — enter the details manually.' });
+    } finally {
+      setLooking(false);
+    }
+  };
 
   const removeStock = useMutation({
     mutationFn: (id) => api.delete(`/watchlist/${id}`),
@@ -41,11 +81,18 @@ export default function WatchlistPage() {
   const submitAdd = (e) => {
     e.preventDefault();
     const priceNum = parseFloat(form.price);
+    const highNum = form.high !== '' ? parseFloat(form.high) : null;
     const nameOk = !!form.name.trim();
     const priceOk = form.price !== '' && priceNum > 0;
     setErrors({ name: !nameOk, price: !priceOk });
     if (!nameOk || !priceOk) return;
-    addStock.mutate({ name: form.name.trim(), sector: form.sector, price: priceNum });
+    addStock.mutate({
+      name: form.name.trim(),
+      sector: form.sector,
+      price: priceNum,
+      symbol: form.symbol || null,
+      high52w: Number.isFinite(highNum) ? highNum : null,
+    });
   };
 
   const handleMarkBought = (w) => openBuyModal(w.id, w.name, Number(w.signal.entryLow));
@@ -88,28 +135,45 @@ export default function WatchlistPage() {
           <div className="add-grid">
             <div className="fld">
               <label>Stock / symbol</label>
-              <input type="text" placeholder="e.g. Infosys, WIPRO..." value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={errors.name ? 'err' : ''} />
-              {errors.name && <div className="err-msg on">Enter a stock name.</div>}
+              <input
+                type="text"
+                placeholder="e.g. Infosys, WIPRO..."
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                onBlur={runLookup}
+                className={errors.name ? 'err' : ''}
+              />
+              {looking && <div className="err-msg on" style={{ color: 'var(--g4)' }}>Looking up…</div>}
+              {!looking && lookupMsg && (
+                <div className="err-msg on" style={{ color: lookupMsg.ok ? '#16a34a' : '#dc2626' }}>{lookupMsg.text}</div>
+              )}
+              {!looking && !lookupMsg && errors.name && <div className="err-msg on">Enter a stock name.</div>}
             </div>
             <div className="fld">
-              <label>Sector</label>
+              <label>Sector{form.symbol ? ' · auto' : ''}</label>
               <select value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })}>
-                {SECTORS.map((s) => <option key={s}>{s}</option>)}
+                {sectorOptions.map((s) => <option key={s}>{s}</option>)}
               </select>
             </div>
             <div className="fld">
-              <label>Current price (₹)</label>
+              <label>Current price (₹){form.symbol ? ' · auto' : ''}</label>
               <input type="number" placeholder="e.g. 218" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} className={errors.price ? 'err' : ''} />
               {errors.price && <div className="err-msg on">Enter a valid price.</div>}
             </div>
             <div className="fld">
-              <label>52-week high (₹)</label>
+              <label>52-week high (₹){form.symbol ? ' · auto' : ''}</label>
               <input type="number" placeholder="e.g. 280" value={form.high} onChange={(e) => setForm({ ...form, high: e.target.value })} />
             </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <button type="submit" className="btn btn-brand btn-lg">Add to watchlist</button>
-            <button type="button" className="btn btn-lg" onClick={() => setShowAdd(false)}>Cancel</button>
+            <button type="submit" className="btn btn-brand btn-lg" disabled={looking}>Add to watchlist</button>
+            <button
+              type="button"
+              className="btn btn-lg"
+              onClick={() => { setShowAdd(false); setForm(EMPTY_FORM); setLookupMsg(null); setErrors({}); lastLookedUp.current = ''; }}
+            >
+              Cancel
+            </button>
           </div>
         </form>
       )}
@@ -123,8 +187,8 @@ export default function WatchlistPage() {
               <div className="sig-body" style={{ padding: 14 }}>
                 <div className="sig-top" style={{ marginBottom: sig ? 10 : 0 }}>
                   <div className="sig-left">
-                    <div className="sig-name">{w.name}</div>
-                    <div className="sig-sector">{w.sector} · {R(w.price)}</div>
+                    <div className="sig-name">{w.name}{w.symbol ? <span style={{ color: 'var(--g4)', fontWeight: 600 }}> · {w.symbol}</span> : null}</div>
+                    <div className="sig-sector">{w.sector} · {R(w.price)}{w.high52w ? ` · 52w high ${R(w.high52w)}` : ''}</div>
                     <div className="sig-tags" style={{ marginTop: 5 }}>
                       {sig ? <span className={`tag ${TYPE_LABEL[sig.type]}`}>{TYPE_TEXT[sig.type]}</span> : <span className="tag tag-gray">Watching — no signal yet</span>}
                       {isHeld && <span className="tag tag-held">Held</span>}

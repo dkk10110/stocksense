@@ -9,6 +9,9 @@ const positionsRoutes = require('./routes/positions');
 const alertsRoutes = require('./routes/alerts');
 const profileRoutes = require('./routes/profile');
 const jobsRoutes = require('./routes/jobs');
+const paperRoutes = require('./routes/paper');
+const discoveryRoutes = require('./routes/discovery');
+const portfolioRoutes = require('./routes/portfolio');
 const { startScheduler } = require('./jobs/scheduler');
 const { generalLimiter } = require('./middleware/rateLimit');
 
@@ -32,6 +35,9 @@ app.use('/api/positions', positionsRoutes);
 app.use('/api/alerts', alertsRoutes);
 app.use('/api/profile', profileRoutes);
 app.use('/api/jobs', jobsRoutes);
+app.use('/api/paper', paperRoutes);
+app.use('/api/discovery', discoveryRoutes);
+app.use('/api/portfolio', portfolioRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);

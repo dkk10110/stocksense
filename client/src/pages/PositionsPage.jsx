@@ -6,10 +6,20 @@ import { useToast } from '../context/ToastContext';
 const R = (n) => '₹' + Math.round(n).toLocaleString('en-IN');
 const P = (n) => (n >= 0 ? '+' : '') + n.toFixed(2) + '%';
 
+const REC_META = {
+  buy: { label: 'BUY', color: '#16a34a' },
+  hold: { label: 'HOLD', color: '#2563eb' },
+  average: { label: 'AVERAGE', color: '#7c3aed' },
+  exit: { label: 'EXIT', color: '#dc2626' },
+  book_profit: { label: 'BOOK PROFIT', color: '#16a34a' },
+};
+
 export default function PositionsPage() {
   const queryClient = useQueryClient();
   const toast = useToast();
   const { data: positions, isLoading } = useQuery({ queryKey: ['positions'], queryFn: () => api.get('/positions').then((r) => r.data) });
+  const { data: intel } = useQuery({ queryKey: ['portfolio-intel'], queryFn: () => api.get('/portfolio/intelligence').then((r) => r.data) });
+  const recFor = (id) => (intel?.holdings || []).find((h) => h.id === id);
 
   const simulate = useMutation({
     mutationFn: ({ id, deltaPct }) => api.post(`/positions/${id}/simulate`, { deltaPct }),
@@ -62,6 +72,21 @@ export default function PositionsPage() {
         </div>
       )}
 
+      {intel?.risk && positions.length > 0 && (
+        <div className="add-panel" style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 8, color: 'var(--g9)' }}>Portfolio intelligence</div>
+          <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12, marginBottom: intel.risk.flags.length ? 8 : 0 }}>
+            <span>Deployed <strong>{R(intel.risk.deployedAmt)}</strong></span>
+            <span>Stop risk <strong>{R(intel.risk.totalRiskAmt)}</strong></span>
+            <span>Heat <strong style={{ color: intel.risk.portfolioHeatPct > 6 ? '#dc2626' : '#16a34a' }}>{intel.risk.portfolioHeatPct}%</strong></span>
+            <span>Sectors: {intel.risk.sectorAllocation.map((s) => `${s.sector} ${s.weightPct}%`).join(' · ')}</span>
+          </div>
+          {intel.risk.flags.map((f, i) => (
+            <div key={i} style={{ fontSize: 11, color: '#d97706', fontWeight: 700 }}>⚠ {f}</div>
+          ))}
+        </div>
+      )}
+
       <div id="pos-cards">
         {!positions.length && (
           <div className="empty">
@@ -82,7 +107,14 @@ export default function PositionsPage() {
             <div className={`pos-card${stopHit ? ' stop-hit' : ''}`} key={pos.id}>
               <div className="pos-hdr">
                 <div>
-                  <div className="sig-name">{pos.name}</div>
+                  <div className="sig-name">
+                    {pos.name}
+                    {(() => {
+                      const rec = recFor(pos.id);
+                      const m = rec && REC_META[rec.action];
+                      return m ? <span className="tag" style={{ marginLeft: 8, background: m.color, color: '#fff' }}>{m.label}</span> : null;
+                    })()}
+                  </div>
                   <div className="pos-meta">{pos.sector} · {pos.qty} shares · {pos.broker} · {pos.daysHeld}d held</div>
                 </div>
                 <div className="pos-pnl">
@@ -90,6 +122,12 @@ export default function PositionsPage() {
                   <div className="pos-pnl-pct" style={{ color: gColor }}>{P(gain)}</div>
                 </div>
               </div>
+
+              {recFor(pos.id) && (
+                <div style={{ fontSize: 11, color: 'var(--g5)', marginBottom: 10, padding: '6px 10px', background: 'var(--g0)', borderRadius: 'var(--r)' }}>
+                  {recFor(pos.id).reason}
+                </div>
+              )}
 
               {stopHit && (
                 <div style={{ background: 'var(--err-bg)', border: '1px solid var(--err-b)', borderRadius: 'var(--r)', padding: '8px 12px', marginBottom: 12, fontSize: 12, color: 'var(--err)', fontWeight: 700 }}>

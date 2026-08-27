@@ -5,6 +5,7 @@ import AuthPage from './pages/AuthPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 import SignalsPage from './pages/SignalsPage';
+import DiscoveryPage from './pages/DiscoveryPage';
 import WatchlistPage from './pages/WatchlistPage';
 import PositionsPage from './pages/PositionsPage';
 import AlertsPage from './pages/AlertsPage';
@@ -19,6 +20,7 @@ function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AppLayout />}>
           <Route path="/signals" element={<SignalsPage />} />
+          <Route path="/discovery" element={<DiscoveryPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/positions" element={<PositionsPage />} />
           <Route path="/alerts" element={<AlertsPage />} />

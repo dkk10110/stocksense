@@ -13,6 +13,12 @@ enum SignalType {
   fallen
   earnings
   volume
+  // v4.0 FRD — Signal Detection Engine additions
+  institutional // Institutional Accumulation
+  rotation      // Sector Rotation
+  rs_leader     // Relative Strength Leader
+  high_delivery // High Delivery Accumulation
+  mtf_breakout  // Multi-timeframe Breakout
 }
 
 enum AlertType {
@@ -26,6 +32,20 @@ enum AlertType {
   stop_loss
   day12_time
   earnings_day
+  earnings_exit // "results tomorrow — exit now to bank the pre-results drift, or hold through?" (PRD 2.4)
+  // v4.0 FRD — Notification Engine additions
+  sector_rotation // a held position's sector has rotated into strength
+  book_profit     // portfolio-intelligence recommends banking the gain
+  new_opportunity // a fresh discovery-scan shortlist entry
+}
+
+/// v4.0 FRD — Portfolio Intelligence recommendation set.
+enum PortfolioAction {
+  buy
+  hold
+  average
+  exit
+  book_profit
 }
 
 model User {
@@ -71,11 +91,24 @@ model Signal {
   rr          Decimal    @db.Decimal(5, 2)
   active      Boolean    @default(true)
   scoreBreakdown Json? // per-layer composite-scorer output, for debugging/transparency — not shown in UI
+  catalystDate  DateTime? // for `catalyst` signals: the dated event's date (drives the 7-day / 1-day alerts)
+  catalystLabel String?   // human description of the event, e.g. "US FDA advisory panel decision"
+
+  // v4.0 FRD fields
+  scoringModel String  @default("v3") // "v3" (6-layer composite) | "v4" (10-factor + risk penalty)
+  sectorScore  Int?    // 0-100 from the Sector Ranking Engine at scan time
+  rsScore      Int?    // relative-strength percentile vs NIFTY (0-100)
+  riskPenalty  Int     @default(0) // negative points applied by the v4 scorer
+  narrative    Json?   // { whyBuy, risks, entryExit, newsSummary } from the AI Narrative Engine
+  fromDiscovery Boolean @default(false) // surfaced by the market-wide discovery scan vs the tracked-symbol pipeline
+
   createdAt   DateTime   @default(now())
 
   watchlistItems WatchlistItem[]
+  paperTrades    PaperTrade[]
 
   @@index([type, active])
+  @@index([active, fromDiscovery])
 }
 
 model WatchlistItem {
@@ -86,6 +119,7 @@ model WatchlistItem {
   symbol    String? // NSE ticker; null for stocks the user typed in manually and we haven't resolved yet
   sector    String
   price     Decimal  @db.Decimal(12, 2)
+  high52w   Decimal? @db.Decimal(12, 2) // 52-week high at add time, from the Yahoo Finance lookup
   signalId  String?
   signal    Signal?  @relation(fields: [signalId], references: [id])
   createdAt DateTime @default(now())
@@ -113,22 +147,29 @@ model Position {
   stop            Decimal       @db.Decimal(12, 2)
   currentPrice    Decimal       @db.Decimal(12, 2)
   status          String        @default("open") // open | sold
+  signalType      SignalType?   // snapshot of the linked signal's type at buy time (drives type-specific position alerts + per-type scorecard)
+  catalystDate    DateTime?     // snapshot for `catalyst` positions — drives the 7-day / 1-day held-position alerts
   stopAlertSent   Boolean       @default(false) // fires the stop-loss Telegram alert once, not on every price poll
-  day12AlertSent  Boolean       @default(false) // fires the day-12 time-expiry alert once
+  day12AlertSent  Boolean       @default(false) // fires the day-N time-expiry alert once
   earningsAlertSent Boolean     @default(false) // fires the earnings-day alert once
+  earningsExitAlertSent Boolean @default(false) // fires the "results tomorrow" exit-decision alert once
+  catalyst7dAlertSent Boolean   @default(false)
+  catalyst1dAlertSent Boolean   @default(false)
   createdAt       DateTime      @default(now())
 
   @@index([userId, status])
 }
 
 model TradeHistory {
-  id       String   @id @default(uuid())
-  userId   String
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  name     String
-  gainPct  Decimal  @db.Decimal(6, 2)
-  pl       Decimal  @db.Decimal(12, 2)
-  soldDate DateTime @default(now())
+  id         String      @id @default(uuid())
+  userId     String
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name       String
+  signalType SignalType? // which of the 5 forward types this trade came from — powers the per-type scorecard (PRD 6.1)
+  gainPct    Decimal     @db.Decimal(6, 2)
+  pl         Decimal     @db.Decimal(12, 2)
+  daysHeld   Int?
+  soldDate   DateTime    @default(now())
 
   @@index([userId])
 }
@@ -174,7 +215,7 @@ model Settings {
 
 model JobRun {
   id         String    @id @default(uuid())
-  jobName    String // evening_scan | morning_rescore | position_poll | daily_position_checks | db_backup
+  jobName    String // evening_scan | morning_rescore | position_poll | daily_position_checks | paper_trade_eval | discovery_scan | db_backup
   startedAt  DateTime  @default(now())
   finishedAt DateTime?
   status     String    @default("running") // running | success | failed
@@ -182,4 +223,61 @@ model JobRun {
   error      String?
 
   @@index([jobName, startedAt])
+}
+
+/// v4.0 FRD — Market Discovery Engine. One row per post-close market-wide scan; `shortlist` holds
+/// the ranked top opportunities and `sectorRanks` the top 5-7 sectors, so `GET /api/discovery`
+/// can serve the last scan without recomputing.
+model DiscoveryRun {
+  id            String   @id @default(uuid())
+  startedAt     DateTime @default(now())
+  finishedAt    DateTime?
+  universeSize  Int      @default(0) // stocks considered
+  scannedCount  Int      @default(0) // stocks that passed the liquidity/quality filter
+  shortlist     Json     @default("[]") // [{ symbol, name, sector, score, type, confidence, ... }]
+  sectorRanks   Json     @default("[]") // [{ sector, score, rank, rs, momentum, ... }]
+  breadth       Json?    // { advancers, decliners, advanceDeclineRatio, pctAbove50EMA }
+  note          String?
+
+  @@index([startedAt])
+}
+
+/// v4.0 FRD — Sector Ranking Engine snapshot (latest scan). Kept separate from DiscoveryRun.shortlist
+/// so held-position sector-rotation checks have a stable place to read from.
+model SectorRank {
+  id         String   @id @default(uuid())
+  sector     String   @unique
+  score      Int // 0-100
+  rank       Int
+  rs         Int? // relative strength component
+  momentum   Int?
+  breakdown  Json? // full component scores
+  updatedAt  DateTime @updatedAt
+}
+
+/// Paper-trading validation (PRD 9, Week 4). Every generated signal opens one PaperTrade;
+/// a daily job walks each open trade's price forward to a target-hit / stopped / expired
+/// outcome. `GET /api/paper` aggregates these into a per-type accuracy scorecard so the
+/// 30-day paper run can be judged without touching real capital.
+model PaperTrade {
+  id            String     @id @default(uuid())
+  signalId      String
+  signal        Signal     @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  symbol        String
+  type          SignalType
+  entryPrice    Decimal    @db.Decimal(12, 2)
+  target        Decimal    @db.Decimal(12, 2)
+  stop          Decimal    @db.Decimal(12, 2)
+  confidence    Int
+  swingDays     Int
+  openedAt      DateTime   @default(now())
+  status        String     @default("open") // open | target_hit | stopped | expired
+  exitPrice     Decimal?   @db.Decimal(12, 2)
+  exitReason    String?
+  closedAt      DateTime?
+  daysToOutcome Int?
+  peakGainPct   Decimal?   @db.Decimal(6, 2)
+
+  @@index([status])
+  @@index([type, status])
 }

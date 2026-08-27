@@ -2,9 +2,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../lib/api';
 
 const CATEGORY = {
-  gain_2: 'fired', gain_5: 'fired', gain_10: 'fired',
-  forward_signal: 'signal',
-  rsi_reversal: 'warn', catalyst_7day: 'warn', catalyst_1day: 'warn', day12_time: 'warn', earnings_day: 'warn',
+  gain_2: 'fired', gain_5: 'fired', gain_10: 'fired', book_profit: 'fired',
+  forward_signal: 'signal', new_opportunity: 'signal',
+  rsi_reversal: 'warn', catalyst_7day: 'warn', catalyst_1day: 'warn', day12_time: 'warn', earnings_day: 'warn', earnings_exit: 'warn', sector_rotation: 'warn',
   stop_loss: 'danger',
 };
 const DOT_COLOR = { fired: 'g', signal: 'b', warn: 'a', danger: 'r' };

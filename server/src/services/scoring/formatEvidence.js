@@ -39,6 +39,15 @@ function formatEvidence(detection) {
         ],
         catalysts: [`Q results — ${e.resultsInDays} days (${e.resultsDate})`],
       };
+    case 'catalyst':
+      return {
+        indicators: [
+          { label: `RSI ${e.rsi} — below 65 ceiling, not priced in`, color: 'blue' },
+          { label: e.fiiDiiAccumulating ? 'FII/DII accumulating pre-event' : 'Institutional flow neutral', color: e.fiiDiiAccumulating ? 'green' : 'amber' },
+          { label: `Est. event move ~${e.expectedImpactPct}%`, color: 'purple' },
+        ],
+        catalysts: [`${e.catalystLabel} — ${e.daysToEvent} days (${e.catalystDate})`],
+      };
     default:
       return { indicators: [], catalysts: [] };
   }
@@ -49,9 +58,13 @@ const HEADLINES = {
   volume: 'Volume drying up at support — selling exhaustion',
   fallen: 'Fallen angel reversal — RSI turning from extreme oversold',
   earnings: 'Earnings play — pre-results entry before the run',
+  catalyst: 'Catalyst countdown — dated event approaching',
 };
 
 function generateHeadline(detection) {
+  if (detection.type === 'catalyst' && detection.evidence?.catalystLabel) {
+    return `Catalyst countdown — ${detection.evidence.catalystLabel} in ${detection.evidence.daysToEvent} days`;
+  }
   return HEADLINES[detection.type] || 'Forward signal detected';
 }
 

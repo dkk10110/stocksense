@@ -1,12 +1,10 @@
-const { latestEma, latestRsi, avgVolume, closes } = require('../indicators');
+const { latestEma, latestRsi, avgVolume, closes, demandZones } = require('../indicators');
 
 /**
  * PRD 2.5 — Volume reversal at support.
- * Price within 1.5% of the 50-day or 200-day EMA, volume dried up below 0.5x 20-day average,
- * RSI 35–45 (oversold-but-not-extreme), and that support level has bounced before.
- *
- * Simplification vs. the PRD: "previous demand zone" (a discretionary swing-low support) is not
- * detected — only the two EMA-based supports, which are precisely computable from OHLCV alone.
+ * Price within 1.5% of the 50-day EMA, 200-day EMA, OR a previous demand zone (swing-low shelf
+ * touched 2+ times); volume dried up below 0.5x 20-day average; RSI 35–45 (oversold-but-not-extreme);
+ * and that support level has bounced before.
  */
 function countPriorBounces(rows, emaPeriod, tolerancePct = 0.015) {
   const closePrices = closes(rows);
@@ -36,8 +34,12 @@ function detectVolumeReversal(rows, { tolerancePct = 0.015, volumeRatioMax = 0.5
   const ema200 = latestEma(rows, 200);
 
   const supports = [
-    ema50 != null && { label: '50-day EMA', level: ema50, period: 50 },
-    ema200 != null && { label: '200-day EMA', level: ema200, period: 200 },
+    ema50 != null && { label: '50-day EMA', level: ema50, period: 50, kind: 'ema' },
+    ema200 != null && { label: '200-day EMA', level: ema200, period: 200, kind: 'ema' },
+    // PRD "previous demand zone": swing-low shelves touched 2+ times in the stored history.
+    ...demandZones(rows).filter((z) => z.touches >= 2).map((z) => ({
+      label: `demand zone (${z.touches} prior touches)`, level: z.price, period: 50, kind: 'zone', touches: z.touches,
+    })),
   ].filter(Boolean);
 
   const nearSupport = supports.find((s) => Math.abs(price - s.level) / s.level <= tolerancePct);
@@ -49,7 +51,11 @@ function detectVolumeReversal(rows, { tolerancePct = 0.015, volumeRatioMax = 0.5
   const rsiInRange = rsi >= 35 && rsi <= 45;
   if (!rsiInRange) return null;
 
-  const priorBounces = countPriorBounces(rows, nearSupport.period, tolerancePct);
+  // For EMA supports, count historical bounces off that EMA. For a demand zone, the touch
+  // count from clustering already is the prior-bounce evidence.
+  const priorBounces = nearSupport.kind === 'zone'
+    ? nearSupport.touches
+    : countPriorBounces(rows, nearSupport.period, tolerancePct);
   if (priorBounces < 2) return null;
 
   return {
@@ -59,6 +65,7 @@ function detectVolumeReversal(rows, { tolerancePct = 0.015, volumeRatioMax = 0.5
     evidence: {
       supportLevel: nearSupport.label,
       supportPrice: Number(nearSupport.level.toFixed(2)),
+      supportKind: nearSupport.kind,
       volumeVsAvg20: Number((volume / avgVol20).toFixed(2)),
       rsi: Math.round(rsi),
       priorBounces,

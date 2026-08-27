@@ -20,8 +20,40 @@ const FILTERS = [
   { key: 'catalyst', label: 'Catalyst' },
   { key: 'fallen', label: 'Fallen angel' },
   { key: 'earnings', label: 'Earnings play' },
+  { key: 'volume', label: 'Volume reversal' },
 ];
 const confColor = (c) => (c >= 70 ? '#16a34a' : c >= 60 ? '#d97706' : '#dc2626');
+
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // India has no DST — fixed +05:30
+
+// The composite scorer stamps VIX onto every generated signal's macro layer ("India VIX 14.03").
+function extractVix(signals) {
+  for (const s of signals || []) {
+    const m = s.scoreBreakdown?.macro?.note?.match(/[\d.]+/);
+    if (m) return Number(m[0]);
+  }
+  return null;
+}
+
+const fmtIST = (d) =>
+  d.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+
+// Next scheduled scan — mirrors the server scheduler: 09:20 and 18:15 IST, Mon–Fri.
+function nextScanTime(now = new Date()) {
+  const istMs = now.getTime() + IST_OFFSET_MS;
+  const slotsMin = [9 * 60 + 20, 18 * 60 + 15];
+  for (let addDays = 0; addDays < 7; addDays++) {
+    const day = new Date(istMs + addDays * 86400000);
+    const dow = day.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    const dayStartIST = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate());
+    for (const min of slotsMin) {
+      const candIST = dayStartIST + min * 60000;
+      if (candIST > istMs) return new Date(candIST - IST_OFFSET_MS);
+    }
+  }
+  return null;
+}
 
 export default function SignalsPage() {
   const [filter, setFilter] = useState('all');
@@ -52,6 +84,14 @@ export default function SignalsPage() {
     return { count, avgConf, avgUp };
   }, [signals]);
 
+  const vix = useMemo(() => extractVix(signals), [signals]);
+  const scoredAt = useMemo(() => {
+    if (!signals?.length) return null;
+    const latest = signals.reduce((max, s) => (s.createdAt > max ? s.createdAt : max), signals[0].createdAt);
+    return new Date(latest);
+  }, [signals]);
+  const nextScan = nextScanTime();
+
   const onMarkAsBought = async (signal) => {
     let wl = (watchlist || []).find((w) => w.signalId === signal.id);
     if (!wl) {
@@ -74,14 +114,22 @@ export default function SignalsPage() {
         <div className="mc"><div className="mc-l">Forward signals</div><div className="mc-v b">{metrics.count}</div></div>
         <div className="mc"><div className="mc-l">Avg confidence</div><div className="mc-v g">{metrics.avgConf.toFixed(0)}%</div></div>
         <div className="mc"><div className="mc-l">Avg upside</div><div className="mc-v g">+{metrics.avgUp.toFixed(1)}%</div></div>
-        <div className="mc"><div className="mc-l">VIX — safe</div><div className="mc-v a">14.2</div></div>
+        <div className="mc">
+          <div className="mc-l">VIX{vix == null ? '' : vix <= 18 ? ' — safe' : ' — elevated'}</div>
+          <div className={`mc-v ${vix == null ? 'a' : vix <= 18 ? 'g' : 'r'}`}>{vix == null ? '—' : vix.toFixed(1)}</div>
+        </div>
       </div>
 
       <div className="signal-epoch">
         <div className="epoch-pulse"></div>
         <div>
-          <div className="epoch-text">Evening scan complete — signals generated for <strong>tomorrow's entry window</strong>. These stocks are set up to move in the next 15 days. Buy before the move, not after.</div>
-          <div className="epoch-time">Scored: Today 3:45 PM · Next scan: Tomorrow 9:20 AM · VIX 14.2 — all signals active</div>
+          <div className="epoch-text">Signals generated for the <strong>next entry window</strong>. These stocks are set up to move in the next 15 days. Buy before the move, not after.</div>
+          <div className="epoch-time">
+            {scoredAt ? `Scored: ${fmtIST(scoredAt)}` : 'No signals scored yet'}
+            {nextScan ? ` · Next scan: ${fmtIST(nextScan)}` : ''}
+            {vix == null ? '' : ` · VIX ${vix.toFixed(1)}`}
+            {` · ${signals?.length || 0} signal${signals?.length === 1 ? '' : 's'} active`}
+          </div>
         </div>
       </div>
 

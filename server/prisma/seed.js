@@ -106,8 +106,9 @@ const ALERTS = [
 ];
 
 const DEFAULT_ALERTS_CONFIG = {
-  safety2: true, mid5: true, full10: true, stopLoss: true,
-  dayExpiry: true, compression: true, fallenAngel: true, catalyst: true,
+  safety2: true, mid5: true, full10: true, stopLoss: true, dayExpiry: true,
+  compression: true, fallenAngel: true, catalyst: true, earningsPlay: true, volumeReversal: true,
+  sectorRotation: true, portfolioAdvice: true, discovery: true,
 };
 
 async function main() {

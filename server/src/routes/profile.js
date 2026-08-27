@@ -13,15 +13,30 @@ router.get('/', async (req, res) => {
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   const trades = await prisma.tradeHistory.findMany({ where: { userId: req.userId } });
-  const n = trades.length;
-  const winRate = n ? Math.round((trades.filter((t) => Number(t.gainPct) >= 0).length / n) * 100) : null;
-  const avgGain = n ? trades.reduce((s, t) => s + Number(t.gainPct), 0) / n : null;
+
+  const summarize = (list) => {
+    const n = list.length;
+    if (!n) return { winRate: null, tradesClosed: 0, avgGain: null, avgDaysHeld: null };
+    const withDays = list.filter((t) => t.daysHeld != null);
+    return {
+      winRate: Math.round((list.filter((t) => Number(t.gainPct) >= 0).length / n) * 100),
+      tradesClosed: n,
+      avgGain: list.reduce((s, t) => s + Number(t.gainPct), 0) / n,
+      avgDaysHeld: withDays.length ? Number((withDays.reduce((s, t) => s + t.daysHeld, 0) / withDays.length).toFixed(1)) : null,
+    };
+  };
+
+  // PRD §6.1 — "Monthly scorecard now shows performance broken down by signal type."
+  const byType = {};
+  for (const type of ['compression', 'catalyst', 'fallen', 'earnings', 'volume']) {
+    byType[type] = summarize(trades.filter((t) => t.signalType === type));
+  }
 
   res.json({
     id: user.id, name: user.name, email: user.email, phone: user.phone,
     broker: user.broker, riskPref: user.riskPref, settings: user.settings,
     createdAt: user.createdAt,
-    scorecard: { winRate, tradesClosed: n, avgGain },
+    scorecard: { ...summarize(trades), byType },
   });
 });
 

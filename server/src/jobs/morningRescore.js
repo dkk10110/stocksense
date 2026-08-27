@@ -1,72 +1,105 @@
 require('dotenv').config();
 const prisma = require('../lib/prisma');
-const { getIndiaVix, getFiiDiiFlow, getGlobalMacro } = require('../services/marketData/macro');
+const { getMacroSnapshot, getFiiDiiFlow } = require('../services/marketData/macro');
+const { getLatestClose } = require('../services/marketData/priceHistoryStore');
+const { isConfigured: newsApiConfigured, fetchRecentArticles } = require('../services/marketData/newsApi');
+const { scoreNewsSentiment } = require('../services/ai/newsSentiment');
 const { createAlert } = require('../services/alerts/createAlert');
-const { WEIGHTS } = require('../services/scoring/compositeScorer');
+const { WEIGHTS, scoreMacro, scoreFiiDii, scoreNewsIntelligence } = require('../services/scoring/compositeScorer');
 
 /**
- * PRD §5.2 — 9:20 AM pass. Re-fetches overnight macro (VIX, FII/DII, global indices) and adjusts each
- * active signal's macro + FII/DII layers on top of its already-stored other layers, without re-running
- * the full detector pass. Alerts only if confidence moved by more than 5 points, per the PRD's own threshold.
- *
- * Known gap: the PRD also calls for "update entry windows based on pre-market levels" and a fresh news
- * scan — both need Angel One (pre-market ticks) and the news pipeline (deferred since Phase 4/5), so
- * entry windows are left untouched here rather than faked from stale data.
+ * PRD §5.2 — 9:20 AM pass. Re-fetches overnight macro (VIX, S&P/Nasdaq/Brent/INR), FII/DII flow,
+ * and (when configured) re-runs the news-sentiment scan per active signal. Recomputes the macro +
+ * FII/DII + news layers on top of each signal's stored other layers, WITHOUT re-running detectors.
+ * Also refreshes entry windows off the latest stored close (pre-market proxy). Alerts if a signal's
+ * confidence moved by more than 5 points.
  */
 async function runMorningRescore() {
   console.log('=== Morning re-score starting ===');
-  const vix = await getIndiaVix().catch((e) => { console.log(`  VIX unavailable: ${e.message}`); return null; });
+  const macro = await getMacroSnapshot().catch((e) => { console.log(`  macro unavailable: ${e.message}`); return null; });
   const fiiDii = await getFiiDiiFlow().catch((e) => { console.log(`  FII/DII unavailable: ${e.message}`); return null; });
-  const macro = await getGlobalMacro().catch((e) => { console.log(`  Global macro unavailable: ${e.message}`); return null; });
-  console.log(`  VIX=${vix ?? 'unknown'}, FII/DII net=${fiiDii ? fiiDii.fiiNetCr + fiiDii.diiNetCr : 'unknown'}, S&P500=${macro?.sp500ChangePct?.toFixed(2) ?? 'unknown'}%`);
+  console.log(`  VIX=${macro?.vix ?? '?'}, S&P500=${macro?.sp500ChangePct?.toFixed(2) ?? '?'}%, Brent=${macro?.brentChangePct?.toFixed(2) ?? '?'}%, FII/DII net=${fiiDii ? (fiiDii.fiiNetCr + fiiDii.diiNetCr).toFixed(0) : '?'}Cr`);
 
-  if (vix != null && vix > 18) {
-    console.log('  VIX above 18 — suppressing new-signal generation until the next evening scan. Existing active signals are left as-is.');
+  if (macro?.vix != null && macro.vix > 18) {
+    console.log('  VIX above 18 — suppressing new-signal generation until the next evening scan. Existing active signals left as-is.');
     return { adjusted: 0, suppressed: true };
   }
 
-  const scoreMacro = (v) => (v == null ? 50 : v < 14 ? 100 : v < 18 ? 70 : v < 22 ? 40 : 10);
-  const scoreFiiDii = (fd) => {
-    if (!fd || fd.fiiNetCr == null || fd.diiNetCr == null) return 50;
-    return Math.max(0, Math.min(100, 50 + ((fd.fiiNetCr + fd.diiNetCr) / 2000) * 50));
-  };
-
-  const macroScore = scoreMacro(vix);
-  const fiiDiiScore = scoreFiiDii(fiiDii);
+  const macroLayer = scoreMacro(macro || {});
+  const fiiDiiLayer = scoreFiiDii(fiiDii);
 
   const activeSignals = await prisma.signal.findMany({ where: { active: true } });
+  const sentimentBySymbol = new Map();
   let adjusted = 0;
+  let windowsRefreshed = 0;
 
   for (const signal of activeSignals) {
     const layers = signal.scoreBreakdown || {};
-    const oldMacroScore = layers.macro?.score ?? 50;
-    const oldFiiDiiScore = layers.fiiDii?.score ?? 50;
-    const delta = (macroScore - oldMacroScore) * WEIGHTS.macro + (fiiDiiScore - oldFiiDiiScore) * WEIGHTS.fiiDii;
+
+    // news re-scan (once per symbol per run) — only when NewsAPI + AI are configured
+    let newsLayer = null;
+    if (newsApiConfigured()) {
+      if (!sentimentBySymbol.has(signal.symbol)) {
+        try {
+          const articles = await fetchRecentArticles(`${signal.name} OR ${signal.symbol} stock NSE`);
+          sentimentBySymbol.set(signal.symbol, scoreNewsIntelligence(await scoreNewsSentiment(signal.symbol, articles)));
+        } catch (e) {
+          console.log(`  [${signal.symbol}] news re-scan failed: ${e.message}`);
+          sentimentBySymbol.set(signal.symbol, null);
+        }
+      }
+      newsLayer = sentimentBySymbol.get(signal.symbol);
+    }
+
+    const oldMacro = layers.macro?.score ?? 50;
+    const oldFiiDii = layers.fiiDii?.score ?? 50;
+    const oldNews = layers.newsIntelligence?.score ?? 50;
+
+    let delta = (macroLayer.score - oldMacro) * WEIGHTS.macro + (fiiDiiLayer.score - oldFiiDii) * WEIGHTS.fiiDii;
+    if (newsLayer && !newsLayer.pending) delta += (newsLayer.score - oldNews) * WEIGHTS.newsIntelligence;
     const newConfidence = Math.round(signal.confidence + delta);
 
+    // refresh entry window off the latest close (pre-market proxy) — keeps the same band width
+    const latestClose = await getLatestClose(signal.symbol);
+    const updateData = {};
+    if (latestClose != null && Math.abs(latestClose - Number(signal.price)) / Number(signal.price) > 0.005) {
+      const bandLow = Number(signal.entryLow) / Number(signal.price);
+      const bandHigh = Number(signal.entryHigh) / Number(signal.price);
+      updateData.price = latestClose;
+      updateData.entryLow = Number((latestClose * bandLow).toFixed(2));
+      updateData.entryHigh = Number((latestClose * bandHigh).toFixed(2));
+      windowsRefreshed += 1;
+    }
+
     if (Math.abs(newConfidence - signal.confidence) > 5) {
-      const updatedLayers = {
+      updateData.confidence = newConfidence;
+      updateData.scoreBreakdown = {
         ...layers,
-        macro: { score: macroScore, pending: false, note: `India VIX ${vix}` },
-        fiiDii: { score: Math.round(fiiDiiScore), pending: false, note: `market-wide net flow ₹${(fiiDii.fiiNetCr + fiiDii.diiNetCr).toFixed(0)}Cr (not stock-specific)` },
+        macro: macroLayer,
+        fiiDii: fiiDiiLayer,
+        ...(newsLayer ? { newsIntelligence: newsLayer } : {}),
       };
-      await prisma.signal.update({ where: { id: signal.id }, data: { confidence: newConfidence, scoreBreakdown: updatedLayers } });
 
       const watchers = await prisma.watchlistItem.findMany({ where: { signalId: signal.id }, select: { userId: true }, distinct: ['userId'] });
       for (const { userId } of watchers) {
         await createAlert({
           userId,
           type: 'forward_signal',
+          signalType: signal.type,
           title: `${signal.name} confidence updated — ${signal.confidence}% → ${newConfidence}%`,
-          body: `Overnight macro conditions moved this signal's confidence by ${Math.abs(newConfidence - signal.confidence)} points. VIX now ${vix}, FII/DII net ₹${fiiDii ? (fiiDii.fiiNetCr + fiiDii.diiNetCr).toFixed(0) : '—'}Cr.`,
+          body: `Overnight conditions moved this signal by ${Math.abs(newConfidence - signal.confidence)} points. VIX ${macro?.vix ?? '?'}, S&P500 ${macro?.sp500ChangePct?.toFixed(2) ?? '?'}%, FII/DII net ₹${fiiDii ? (fiiDii.fiiNetCr + fiiDii.diiNetCr).toFixed(0) : '?'}Cr.`,
         });
       }
       adjusted += 1;
     }
+
+    if (Object.keys(updateData).length) {
+      await prisma.signal.update({ where: { id: signal.id }, data: updateData });
+    }
   }
 
-  console.log(`=== Morning re-score complete — ${adjusted} signal(s) adjusted by >5 points ===`);
-  return { adjusted, suppressed: false };
+  console.log(`=== Morning re-score complete — ${adjusted} signal(s) adjusted >5pts, ${windowsRefreshed} entry window(s) refreshed ===`);
+  return { adjusted, windowsRefreshed, suppressed: false };
 }
 
 module.exports = { runMorningRescore };

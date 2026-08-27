@@ -27,12 +27,16 @@ function detectCompression(rows, { bandDays = 5, lookbackDays = 60, bandThreshol
   if (!isNarrowest) return null;
 
   const last = rows[rows.length - 1];
+  const bandLow = Math.min(...recent.map((r) => Number(r.low)));
+  const bandHigh = Math.max(...recent.map((r) => Number(r.high)));
   return {
     type: 'compression',
     symbol: last.symbol,
     price: Number(last.close),
     evidence: {
       bandDays,
+      bandLow: Number(bandLow.toFixed(2)),
+      bandHigh: Number(bandHigh.toFixed(2)),
       bandWidthPct: Number((((Number(last.high) - Number(last.low)) / Number(last.close)) * 100).toFixed(2)),
       volumeTrend: 'declining',
       bollingerWidthPct: Number(currentWidth.toFixed(2)),

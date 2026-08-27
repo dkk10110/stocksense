@@ -1,27 +1,35 @@
 const { latestRsi, rsiSeries, avgVolume, volumes } = require('../indicators');
 
-/** Rough 0–100 fundamental-health proxy from Screener.in data, since the PRD never fully defines its formula. */
+/**
+ * Rough 0–100 fundamental-health proxy from Screener.in data (PRD 2.3 wants "earnings, debt, ROE intact"
+ * but never defines the formula). ROE 25 / ROCE 25 / low debt 15 / YoY sales growth 20 / profitable 15.
+ */
 function fundamentalScore(fundamentals) {
   if (!fundamentals) return null;
   let score = 0;
-  if (fundamentals.roe != null && fundamentals.roe >= 15) score += 30;
-  if (fundamentals.roce != null && fundamentals.roce >= 15) score += 30;
+  if (fundamentals.roe != null && fundamentals.roe >= 15) score += 25;
+  if (fundamentals.roce != null && fundamentals.roce >= 15) score += 25;
+  if (fundamentals.debtToEquity != null && fundamentals.debtToEquity < 1) score += 15;
 
   const q = fundamentals.quarters || [];
   const latest = q[q.length - 1];
   const yearAgo = q[q.length - 5]; // same quarter, prior year (quarterly data)
   if (latest?.sales != null && yearAgo?.sales != null && latest.sales > yearAgo.sales) score += 20;
-  if (latest?.netProfit != null && latest.netProfit > 0) score += 20;
+  if (latest?.netProfit != null && latest.netProfit > 0) score += 15;
 
   return score;
 }
 
 /**
- * PRD 2.3 — Fallen angel reversal. 5 gate conditions; gate 3 ("drop was external, not business
- * deterioration") requires AI news classification, which isn't built until Phase 5 — that gate
- * is reported as "pending" rather than faked, and does not block detection on its own.
+ * PRD 2.3 — Fallen angel reversal. 5 gate conditions.
+ * Gate 3 ("drop was external, not business deterioration") is supplied by the AI news
+ * classifier (services/ai/classifyDrop) via `dropClassification`. When that's null (AI layer
+ * not configured) the gate stays `pending` and doesn't block; when it says the drop is
+ * business deterioration, the setup is vetoed outright.
+ *
+ * @param {object|null} dropClassification  { external: boolean, classification, reason } or null
  */
-function detectFallenAngel(rows, fundamentals) {
+function detectFallenAngel(rows, fundamentals, dropClassification = null) {
   if (rows.length < 260) return null; // need ~52 weeks for the ATH comparison
 
   const last = rows[rows.length - 1];
@@ -36,7 +44,14 @@ function detectFallenAngel(rows, fundamentals) {
   const fScore = fundamentalScore(fundamentals);
   gates.fundamentals = fScore != null ? fScore >= 70 : null;
 
-  gates.newsClassification = null; // pending — Phase 5 (AI news classification)
+  if (dropClassification == null) {
+    gates.newsClassification = null; // AI layer not configured — stays pending, doesn't block
+  } else if (dropClassification.external) {
+    gates.newsClassification = true;
+  } else {
+    // business deterioration (or "unknown") — PRD says this must NOT pass. Veto the setup.
+    return null;
+  }
 
   const rsiHist = rsiSeries(rows);
   if (rsiHist.length < 10) return null;
@@ -54,8 +69,8 @@ function detectFallenAngel(rows, fundamentals) {
   gates.accumulationPattern = hadPanicSpike && nowQuiet;
   if (!gates.accumulationPattern) return null;
 
-  const knownGates = ['dropRange', 'rsiReversal', 'accumulationPattern', 'fundamentals'];
-  const knownPassed = knownGates.filter((g) => gates[g] === true).length;
+  const allGates = ['dropRange', 'fundamentals', 'newsClassification', 'rsiReversal', 'accumulationPattern'];
+  const passed = allGates.filter((g) => gates[g] === true).length;
   const pendingGates = Object.entries(gates).filter(([, v]) => v === null).map(([k]) => k);
 
   return {
@@ -68,9 +83,11 @@ function detectFallenAngel(rows, fundamentals) {
       rsiMin: Math.round(minRsi),
       rsiNow: Math.round(currentRsi),
       fundamentalScore: fScore,
+      dropClassification: dropClassification ? dropClassification.classification : null,
+      dropReason: dropClassification ? dropClassification.reason : null,
     },
     gates,
-    gatesPassed: `${knownPassed}/4 known gates`,
+    gatesPassed: `${passed}/5 gates`,
     pendingGates,
   };
 }

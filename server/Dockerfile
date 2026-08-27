@@ -1,6 +1,13 @@
-FROM node:20-slim
+FROM node:22-slim
 
 WORKDIR /app
+
+# node:*-slim ships without libssl. Prisma's query engine needs it to detect the
+# right engine binary (otherwise it warns and guesses openssl-1.1.x); ca-certificates
+# is needed for the TLS connection to Neon.
+RUN apt-get update -y \
+  && apt-get install -y --no-install-recommends openssl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
 RUN npm ci --omit=dev

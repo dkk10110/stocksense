@@ -3,6 +3,8 @@ const { runEveningScan } = require('./eveningScan');
 const { runMorningRescore } = require('./morningRescore');
 const { runPositionPoll } = require('./positionPoll');
 const { runDailyPositionChecks } = require('./dailyPositionChecks');
+const { runPaperTradeEval } = require('./paperTradeEval');
+const { runDiscovery } = require('./discoveryScan');
 const { trackJobRun } = require('../services/jobs/trackJobRun');
 
 const TIMEZONE = 'Asia/Kolkata'; // this is an India-specific app — never rely on server-local time for these
@@ -29,10 +31,16 @@ function startScheduler() {
   // Intraday position poll, every 5 minutes during NSE market hours (9:15 AM - 3:30 PM Mon-Fri).
   cron.schedule('*/5 9-15 * * 1-5', safeRun('position_poll', runPositionPoll), { timezone: TIMEZONE });
 
-  // Day-12 time-expiry + earnings-day checks, once daily shortly after market close.
+  // Day-N time-expiry + earnings + catalyst held-position checks, once daily shortly after market close.
   cron.schedule('35 15 * * 1-5', safeRun('daily_position_checks', runDailyPositionChecks), { timezone: TIMEZONE });
 
-  console.log(`[cron] Scheduler started (timezone: ${TIMEZONE}) — evening scan 18:15, morning re-score 09:20, position poll every 5min 09:15-15:30, daily checks 15:35.`);
+  // Paper-trading validation sweep (PRD 9 wk4) — walk open paper trades to an outcome, daily after close.
+  cron.schedule('40 15 * * 1-5', safeRun('paper_trade_eval', runPaperTradeEval), { timezone: TIMEZONE });
+
+  // v4.0 FRD — market-wide Discovery scan, 7:00 PM Mon-Fri (after the evening scan/ingest).
+  cron.schedule('0 19 * * 1-5', safeRun('discovery_scan', runDiscovery), { timezone: TIMEZONE });
+
+  console.log(`[cron] Scheduler started (timezone: ${TIMEZONE}) — evening scan 18:15, discovery scan 19:00, morning re-score 09:20, position poll every 5min 09:15-15:30, daily checks 15:35, paper-trade eval 15:40.`);
 }
 
 module.exports = { startScheduler };

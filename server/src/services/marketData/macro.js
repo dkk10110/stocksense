@@ -9,17 +9,62 @@ async function getIndiaVix() {
   return q.regularMarketPrice;
 }
 
-/** S&P 500, Nasdaq, USD/INR — the PRD's morning-pass macro inputs. */
+/**
+ * NIFTY 50 daily history (chronological, shaped like PriceHistory rows) — the benchmark for
+ * relative-strength scoring in the v4 discovery engine. `days` ~ calendar days back.
+ */
+async function getBenchmarkHistory(days = 300) {
+  const period1 = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const result = await yf.chart('^NSEI', { period1, interval: '1d' });
+  return result.quotes
+    .filter((q) => q.close != null)
+    .map((q) => ({
+      symbol: 'NIFTY',
+      date: new Date(q.date.toISOString().split('T')[0]),
+      open: Number((q.open ?? q.close).toFixed(2)),
+      high: Number((q.high ?? q.close).toFixed(2)),
+      low: Number((q.low ?? q.close).toFixed(2)),
+      close: Number(q.close.toFixed(2)),
+      volume: BigInt(q.volume || 0),
+      source: 'yahoo',
+    }));
+}
+
+/** S&P 500, Nasdaq, USD/INR, Brent crude — the PRD's morning-pass macro inputs (§5.2). */
 async function getGlobalMacro() {
-  const [sp500, nasdaq, usdinr] = await Promise.all([
+  const [sp500, nasdaq, usdinr, brent] = await Promise.all([
     yf.quote('^GSPC'),
     yf.quote('^IXIC'),
     yf.quote('INR=X'),
+    yf.quote('BZ=F').catch(() => null), // Brent crude front-month; occasionally unavailable
   ]);
   return {
     sp500ChangePct: sp500.regularMarketChangePercent,
     nasdaqChangePct: nasdaq.regularMarketChangePercent,
     usdInr: usdinr.regularMarketPrice,
+    usdInrChangePct: usdinr.regularMarketChangePercent,
+    brentPrice: brent?.regularMarketPrice ?? null,
+    brentChangePct: brent?.regularMarketChangePercent ?? null,
+  };
+}
+
+/**
+ * One call for everything the composite scorer's macro layer needs: VIX + global macro,
+ * flattened. Each piece degrades to null independently.
+ */
+async function getMacroSnapshot() {
+  const [vix, global] = await Promise.all([
+    getIndiaVix().catch(() => null),
+    getGlobalMacro().catch(() => null),
+  ]);
+  return {
+    vix,
+    sp500ChangePct: global?.sp500ChangePct ?? null,
+    nasdaqChangePct: global?.nasdaqChangePct ?? null,
+    usdInr: global?.usdInr ?? null,
+    usdInrChangePct: global?.usdInrChangePct ?? null,
+    brentPrice: global?.brentPrice ?? null,
+    brentChangePct: global?.brentChangePct ?? null,
   };
 }
 
@@ -42,4 +87,4 @@ async function getFiiDiiFlow() {
   };
 }
 
-module.exports = { getIndiaVix, getGlobalMacro, getFiiDiiFlow };
+module.exports = { getIndiaVix, getBenchmarkHistory, getGlobalMacro, getMacroSnapshot, getFiiDiiFlow };

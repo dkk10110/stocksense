@@ -8,11 +8,18 @@ const ALERT_TOGGLES = [
   { key: 'mid5', label: '5% mid-target alert' },
   { key: 'full10', label: '10% full-target alert' },
   { key: 'stopLoss', label: 'Stop-loss alert' },
-  { key: 'dayExpiry', label: 'Day-12 time-expiry alert' },
+  { key: 'dayExpiry', label: 'Day-N time-expiry alert' },
   { key: 'compression', label: 'Pre-breakout compression alert' },
   { key: 'fallenAngel', label: 'Fallen angel reversal alert' },
-  { key: 'catalyst', label: 'Catalyst countdown alert (7 days)' },
+  { key: 'catalyst', label: 'Catalyst countdown alert (7 / 1 day)' },
+  { key: 'earningsPlay', label: 'Earnings play alert' },
+  { key: 'volumeReversal', label: 'Volume reversal alert' },
+  { key: 'discovery', label: 'Discovery — new opportunity alert' },
+  { key: 'sectorRotation', label: 'Sector rotation alert' },
+  { key: 'portfolioAdvice', label: 'Portfolio advice (book-profit) alert' },
 ];
+
+const TYPE_LABEL = { compression: 'Pre-breakout', catalyst: 'Catalyst', fallen: 'Fallen angel', earnings: 'Earnings play', volume: 'Volume reversal' };
 
 const monthYear = (iso) => new Date(iso).toLocaleString('en-IN', { month: 'long', year: 'numeric' });
 
@@ -54,6 +61,36 @@ export default function ProfilePage() {
           <div className="sc-cell"><div className="sc-val">{profile.scorecard.tradesClosed}</div><div className="sc-lbl">Trades closed</div></div>
           <div className="sc-cell"><div className="sc-val" style={{ color: '#16a34a' }}>{profile.scorecard.avgGain != null ? (profile.scorecard.avgGain >= 0 ? '+' : '') + profile.scorecard.avgGain.toFixed(1) + '%' : '—'}</div><div className="sc-lbl">Avg gain</div></div>
         </div>
+
+        {profile.scorecard.byType && (
+          <>
+            <div className="set-title">By signal type</div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: 'var(--g4)' }}>
+                    <th style={{ padding: '6px 8px' }}>Type</th>
+                    <th style={{ padding: '6px 8px' }}>Trades</th>
+                    <th style={{ padding: '6px 8px' }}>Win rate</th>
+                    <th style={{ padding: '6px 8px' }}>Avg gain</th>
+                    <th style={{ padding: '6px 8px' }}>Avg days</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(profile.scorecard.byType).map(([type, s]) => (
+                    <tr key={type} style={{ borderTop: '1px solid var(--g1)' }}>
+                      <td style={{ padding: '6px 8px', fontWeight: 700 }}>{TYPE_LABEL[type] || type}</td>
+                      <td style={{ padding: '6px 8px' }}>{s.tradesClosed}</td>
+                      <td style={{ padding: '6px 8px' }}>{s.winRate != null ? s.winRate + '%' : '—'}</td>
+                      <td style={{ padding: '6px 8px', color: s.avgGain >= 0 ? '#16a34a' : '#dc2626' }}>{s.avgGain != null ? (s.avgGain >= 0 ? '+' : '') + s.avgGain.toFixed(1) + '%' : '—'}</td>
+                      <td style={{ padding: '6px 8px' }}>{s.avgDaysHeld != null ? s.avgDaysHeld : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
 
         <div className="set-title">Alert preferences</div>
         {ALERT_TOGGLES.map((t) => (

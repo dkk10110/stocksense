@@ -8,6 +8,10 @@ const { detectCompression } = require('../services/detectors/compression');
 const { detectVolumeReversal } = require('../services/detectors/volumeReversal');
 const { detectFallenAngel } = require('../services/detectors/fallenAngel');
 const { detectEarningsPlay } = require('../services/detectors/earningsPlay');
+const { detectCatalystCountdown } = require('../services/detectors/catalystCountdown');
+const { isConfigured: newsApiConfigured, fetchRecentArticles } = require('../services/marketData/newsApi');
+const { extractCatalystEvent } = require('../services/ai/extractCatalystEvent');
+const { classifyDrop } = require('../services/ai/classifyDrop');
 
 async function bestEffort(promise, label, symbol) {
   try {
@@ -28,11 +32,18 @@ async function scanSymbol(symbol) {
   const fundamentals = await bestEffort(fetchFundamentals(symbol), 'fundamentals (Screener.in)', symbol);
   const nextResultsDate = await bestEffort(fetchNextResultsDate(symbol), 'results date (NSE calendar)', symbol);
 
+  const articles = newsApiConfigured()
+    ? await bestEffort(fetchRecentArticles(`${symbol} stock NSE`), 'news (NewsAPI)', symbol)
+    : null;
+  const catalystEvent = await bestEffort(extractCatalystEvent(symbol, articles), 'catalyst extraction (AI)', symbol);
+  const dropClassification = await bestEffort(classifyDrop(symbol, articles), 'drop classification (AI)', symbol);
+
   const hits = [
     detectCompression(rows),
     detectVolumeReversal(rows),
-    detectFallenAngel(rows, fundamentals),
+    detectFallenAngel(rows, fundamentals, dropClassification),
     detectEarningsPlay(rows, fundamentals, nextResultsDate),
+    detectCatalystCountdown(rows, catalystEvent, null),
   ].filter(Boolean);
 
   if (!hits.length) {
@@ -46,7 +57,7 @@ async function scanSymbol(symbol) {
 async function main() {
   const symbols = await collectTrackedSymbols();
   console.log(`Scanning ${symbols.length} symbols for forward signals: ${symbols.join(', ')}\n`);
-  console.log('(catalyst countdown is not run here — it needs Phase 5\'s AI-based news event extraction)\n');
+  if (!newsApiConfigured()) console.log('(NewsAPI not configured — catalyst countdown + AI drop-classification are skipped)\n');
 
   let totalHits = 0;
   for (const symbol of symbols) {

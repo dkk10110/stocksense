@@ -11,12 +11,16 @@
     "ingest:prices": "node src/scripts/ingestPrices.js",
     "scan:detectors": "node src/scripts/scanDetectors.js",
     "generate:signals": "node src/scripts/generateSignals.js",
+    "discovery:scan": "node src/jobs/discoveryScan.js",
+    "backtest": "node src/scripts/backtest.js",
     "cron:evening": "node src/jobs/eveningScan.js",
     "cron:morning": "node src/jobs/morningRescore.js",
     "cron:poll": "node src/jobs/positionPoll.js",
     "cron:daily-checks": "node src/jobs/dailyPositionChecks.js",
+    "cron:paper": "node src/jobs/paperTradeEval.js",
+    "cron:discovery": "node src/jobs/discoveryScan.js",
     "backup:db": "node src/scripts/backupDb.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test test/"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
@@ -40,12 +44,12 @@
     "node-cron": "^4.6.0",
     "nodemailer": "^9.0.3",
     "otplib": "^13.4.1",
+    "prisma": "^6.19.2",
     "technicalindicators": "^3.1.0",
     "yahoo-finance2": "^3.15.4"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14",
-    "prisma": "^6.19.2"
+    "nodemon": "^3.1.14"
   },
   "overrides": {
     "@hono/node-server": "^2.0.12"
