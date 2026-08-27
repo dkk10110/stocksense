@@ -71,21 +71,44 @@ and blocks some params on `/v2/everything`. Fine for this use. If you hit the
 
 ---
 
-## 3. Telegram bot token + chat ID
+## 3. WhatsApp API (alert delivery)
 
-- **Env vars:** `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-- **Cost:** Free (unlimited messages)
+Notifications go out over **WhatsApp**. Two providers are supported — set
+`WHATSAPP_PROVIDER` and fill the matching block. `WHATSAPP_TO` (recipient number,
+digits-only E.164 e.g. `919812345678`) is required for both.
+
+### Option A — WhatsApp Cloud API (Meta) — `WHATSAPP_PROVIDER=cloud` (default)
+
+- **Env vars:** `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_TO`,
+  optional `WHATSAPP_TEMPLATE_NAME` + `WHATSAPP_TEMPLATE_LANG`
+- **Cost:** free within Meta's monthly service-conversation allowance
 - **Get it:**
-  1. In Telegram, message **@BotFather** → `/newbot` → follow prompts → copy the **bot token**.
-  2. Message your new bot once (say "hi").
-  3. Open `https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates` in a browser → find
-     `"chat":{"id":...}` → that number is your **chat ID**.
+  1. https://developers.facebook.com → create an app → add the **WhatsApp** product.
+  2. **API Setup** page → copy the **Phone number ID** (`WHATSAPP_PHONE_NUMBER_ID`) and a
+     token (`WHATSAPP_ACCESS_TOKEN`). The auto-generated token is 24h — for production,
+     create a **System User** with a permanent token (Business Settings → Users → System users).
+  3. `WHATSAPP_TO` = your WhatsApp number in digits-only E.164 (`91XXXXXXXXXX`).
+  4. **Message templates:** business-initiated messages sent *outside* the 24-hour
+     customer-service window must use a pre-approved template. Create one under
+     **WhatsApp Manager → Message templates** with a single body variable `{{1}}`,
+     then set `WHATSAPP_TEMPLATE_NAME` to its name. Leave `WHATSAPP_TEMPLATE_NAME`
+     blank to send free-form text (only works within 24h of you messaging the number — fine for testing).
 
-**Unlocks:** every alert type (§8) is actually delivered to your phone. Without it,
-alerts are still written to the in-app **Alerts** screen and the DB — only the
-push send is skipped (logged instead).
+### Option B — Twilio WhatsApp — `WHATSAPP_PROVIDER=twilio`
 
-**Code touch points:** `server/src/services/telegram/bot.js`,
+- **Env vars:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `WHATSAPP_TO`
+- **Cost:** free Twilio trial + the WhatsApp **sandbox** (no template approval needed for the sandbox)
+- **Get it:**
+  1. https://console.twilio.com → copy **Account SID** + **Auth Token**.
+  2. Messaging → **Try WhatsApp** → join the sandbox (send the given code to the Twilio number
+     from your phone). `TWILIO_WHATSAPP_FROM` = the sandbox number, e.g. `whatsapp:+14155238886`.
+  3. `WHATSAPP_TO` = your number, digits-only E.164.
+
+**Unlocks:** every alert type (§8) is delivered to your WhatsApp. Without it, alerts
+are still written to the in-app **Alerts** screen and the DB — only the push send is
+skipped (logged instead).
+
+**Code touch points:** `server/src/services/whatsapp/client.js`,
 `server/src/services/alerts/createAlert.js`.
 
 ---
@@ -150,7 +173,7 @@ is written to the server log (the flow still works end-to-end for a solo user).
 1. **Anthropic key** (#1) + **NewsAPI key** (#2) — together these light up the entire
    news/AI half: catalyst signal type, catalyst alerts, news scoring layer,
    fallen-angel gate 3, live "why buy now" text, morning news re-scan.
-2. **Telegram** (#3) — makes alerts reach your phone.
+2. **WhatsApp** (#3) — makes alerts reach your phone.
 3. **Angel One** (#4) — sharpens intraday price/alert accuracy.
 4. **SMTP** (#5) — only matters if others will use the app and self-serve resets.
 
@@ -184,7 +207,7 @@ npm run scan:detectors
 # 2. full signal generation with AI explanations
 npm run generate:signals
 
-# 3. Telegram — generate a signal for a watched stock, confirm a message lands on your phone
+# 3. WhatsApp — generate a signal for a watched stock, confirm a message lands on your phone
 
 # 4. accuracy backtest (no keys needed, needs ~2y price history from `npm run ingest:prices`)
 npm run backtest

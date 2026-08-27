@@ -149,7 +149,7 @@ model Position {
   status          String        @default("open") // open | sold
   signalType      SignalType?   // snapshot of the linked signal's type at buy time (drives type-specific position alerts + per-type scorecard)
   catalystDate    DateTime?     // snapshot for `catalyst` positions — drives the 7-day / 1-day held-position alerts
-  stopAlertSent   Boolean       @default(false) // fires the stop-loss Telegram alert once, not on every price poll
+  stopAlertSent   Boolean       @default(false) // fires the stop-loss WhatsApp alert once, not on every price poll
   day12AlertSent  Boolean       @default(false) // fires the day-N time-expiry alert once
   earningsAlertSent Boolean     @default(false) // fires the earnings-day alert once
   earningsExitAlertSent Boolean @default(false) // fires the "results tomorrow" exit-decision alert once

@@ -91,7 +91,7 @@ export default function AuthPage() {
                 </div>
               </div>
               <div className="fld">
-                <label>Phone (Telegram alerts)</label>
+                <label>Phone (WhatsApp alerts)</label>
                 <input type="tel" placeholder="+91 98765 43210" value={signupForm.phone} onChange={(e) => setSignupForm({ ...signupForm, phone: e.target.value })} />
               </div>
               <div className="frow">

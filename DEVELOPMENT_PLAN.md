@@ -69,7 +69,7 @@ The original PRD assumed a Python stack (`yfinance`, pandas-based backtesting). 
 | Fundamentals (quarterly results, ROE, debt) | **Screener.in** | No public API — scheduled scraping or manual quarterly CSV import | Free | Same limitation in Python or Node; likely quarterly manual/scripted refresh, not real-time. |
 | News for catalyst detection & sentiment | **NewsAPI.org** | REST via `axios`, 100 requests/day free tier | Free | Sufficient per PRD for ~30 tracked stocks. |
 | AI "why buy now" text generation + news sentiment scoring | **Anthropic Claude API (Claude Haiku 4.5)** | Official `@anthropic-ai/sdk` npm package | ~₹9–12/month (per PRD estimate, 20 stocks × 22 days with prompt caching) | Same as PRD — this part is language-agnostic and Node has full official SDK support. |
-| Alerts delivery | **Telegram Bot API** | `node-telegram-bot-api` or raw REST via `axios` | Free | Unlimited messages, same as PRD. |
+| Alerts delivery | **WhatsApp API** (Cloud API / Meta, or Twilio) — _replaces Telegram at the project's request_ | raw REST via `axios` (`services/whatsapp/client.js`) | Free tier | Cloud API needs a pre-approved message template for messages outside the 24h window; Twilio sandbox needs no template. See `dependancy/DEPENDENCIES.md` #3. |
 | Technical indicators (RSI, Bollinger Bands, EMA) | — | `technicalindicators` npm package | Free (library, not a service) | Replaces Python's `ta-lib`/pandas-based calculations. |
 | Job scheduling (6:15 PM evening scan, 9:20 AM morning re-score, 5-min price poll) | — | `node-cron` npm package | Free | Runs inside the Node server process or a separate worker process. |
 
@@ -237,7 +237,7 @@ Exit criteria: an unauthenticated user can recover a forgotten password end-to-e
 1. **Angel One account** — the market-data engine needs an Angel One SmartAPI login regardless of which broker you actually trade through. Do you have (or are you willing to open) an Angel One account for this purpose? (Phase 3 — live intraday price & VIX)
 2. **NewsAPI.org key** — free tier, just needs an email signup at newsapi.org. Needed for the catalyst-countdown detector once Phase 5's AI layer can extract dated events from articles. (Phase 4/5)
 3. **Claude API key** — Phase 5 needs an Anthropic API key billed to you directly (~₹9–12/month). Should I set up the account/key when we get there, or will you provide one? (Phase 5)
-4. **Telegram bot** — needs a bot token from @BotFather and your Telegram chat ID for delivery. Quick to set up when we reach Phase 6. (Phase 6)
+4. **WhatsApp API** (replaces Telegram) — for real alert delivery. Either WhatsApp Cloud API (Meta: phone-number ID + access token + an approved message template) or Twilio WhatsApp (SID + auth token + sandbox join). Recipient number in `WHATSAPP_TO`. Full setup in `dependancy/DEPENDENCIES.md` #3.
 5. **Deployment target** — the cron scheduler is real and built (Phase 6), but it only runs while `node src/index.js` is running on this machine. For it to actually fire the 6:15 PM / 9:20 AM passes and intraday alerts while you're not at your laptop, it needs to live somewhere always-on — a small VPS, Railway/Render free-tier, or similar. This is now the main thing standing between "the automation works" and "the automation runs unattended."
 
 None of these block further work — Phases 5 and 6 were both built and fully tested without them (Claude explanations run on a rule-based fallback, Telegram sends log instead of delivering). They're needed to turn what's already built into what actually reaches you day to day.

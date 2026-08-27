@@ -6,6 +6,7 @@ const { templateNarrative, narrativeStillValid, MIN_CONFIDENCE } = require('../s
 const { isAlertEnabled, TYPE_TO_KEY, SIGNAL_TYPE_TO_KEY } = require('../src/services/alerts/alertPrefs');
 const { formatEvidence, generateHeadline } = require('../src/services/scoring/formatEvidence');
 const aiClient = require('../src/services/ai/client');
+const whatsapp = require('../src/services/whatsapp/client');
 
 // ---------- explainSignal template fallback ----------
 test('templateFallback: produces grounded text for every signal type incl. catalyst', () => {
@@ -50,6 +51,13 @@ test('ai client: isConfigured false without a key; completeJson returns null', a
   assert.equal(aiClient.isConfigured(), false);
   assert.equal(await aiClient.complete({ system: 's', user: 'u' }), null);
   assert.equal(await aiClient.completeJson({ system: 's', user: 'u' }), null);
+});
+
+// ---------- whatsapp client (no credentials in tests) ----------
+test('whatsapp client: unconfigured → isConfigured false, sendMessage is a safe no-op', async () => {
+  assert.equal(whatsapp.isConfigured(), false);
+  await assert.doesNotReject(() => whatsapp.sendMessage('test alert'));
+  assert.ok(['cloud', 'twilio'].includes(whatsapp.PROVIDER));
 });
 
 // ---------- alert preferences mapping ----------

@@ -5,7 +5,7 @@ _Last updated: 2026-08-27_
 Everything in the **v4.0 Functional Requirements Document** is now implemented at the
 code level. This file lists what each v4 module needs from the outside world to run
 at full fidelity, and what it falls back to today. Read `DEPENDENCIES.md` first — the
-v3 credentials (Anthropic, NewsAPI, Telegram, Angel One, SMTP) are shared.
+v3 credentials (Anthropic, NewsAPI, WhatsApp, Angel One, SMTP) are shared.
 
 The v4 engines all **run today with zero new credentials** — they degrade to
 deterministic-only scoring, a curated universe, and template narratives.
@@ -99,8 +99,9 @@ sector ranking + market breadth + 12-stock shortlist produced in ~26 s (FRD budg
 
 ## 5. Push notifications
 
-- **FRD:** "Notifications: Telegram, **Push**, Email".
-- **Now:** Telegram (needs token, see `DEPENDENCIES.md` #3), in-app Alerts screen,
+- **FRD:** "Notifications: Telegram, **Push**, Email". (Telegram has been replaced by
+  **WhatsApp** at the project's request — see `DEPENDENCIES.md` #3.)
+- **Now:** WhatsApp (Cloud API or Twilio — `DEPENDENCIES.md` #3), in-app Alerts screen,
   and Email (SMTP, #5) are wired. **Web Push is not implemented** — it needs a
   service-worker on the client and VAPID keys on the server, which is a client-PWA
   workstream rather than a code gap in the engines.
@@ -137,7 +138,7 @@ shortlist entries.
    instead of ~160. Needs a residential-IP fetch or a vendor instrument list.
 4. **Bhavcopy delivery %** (§2) — sharpens the High Delivery detector + sector model.
 5. **Web Push** (§5) — client PWA workstream, only if you want browser notifications
-   in addition to Telegram/email.
+   in addition to WhatsApp/email.
 
 ---
 

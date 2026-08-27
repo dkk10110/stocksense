@@ -1,5 +1,5 @@
 const prisma = require('../../lib/prisma');
-const { sendMessage } = require('../telegram/bot');
+const { sendMessage } = require('../whatsapp/client');
 const { isAlertEnabled } = require('./alertPrefs');
 
 const EMOJI = {
@@ -10,7 +10,7 @@ const EMOJI = {
 };
 
 /**
- * Writes an Alert row (so it shows on the app's Alerts screen) and sends the same text via Telegram.
+ * Writes an Alert row (so it shows on the app's Alerts screen) and sends the same text via WhatsApp.
  * Respects the user's Profile alert toggles (PRD §6.1) — a disabled type is skipped entirely and
  * returns null. Pass `signalType` for `forward_signal` alerts so the per-type toggle can gate it.
  */
