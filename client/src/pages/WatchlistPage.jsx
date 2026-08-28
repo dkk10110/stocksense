@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import api from '../lib/api';
@@ -19,6 +19,14 @@ export default function WatchlistPage() {
   const [looking, setLooking] = useState(false);
   const [lookupMsg, setLookupMsg] = useState(null); // { ok: boolean, text: string }
   const lastLookedUp = useRef('');
+
+  // typeahead
+  const [results, setResults] = useState([]);
+  const [showResults, setShowResults] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [activeIdx, setActiveIdx] = useState(-1);
+  const searchTimer = useRef(null);
+  const pickedRef = useRef(false); // set when a result is chosen, so blur doesn't re-lookup
   const navigate = useNavigate();
   const { openBuyModal } = useModal();
   const toast = useToast();
@@ -35,6 +43,8 @@ export default function WatchlistPage() {
       setForm(EMPTY_FORM);
       setLookupMsg(null);
       lastLookedUp.current = '';
+      setResults([]);
+      setShowResults(false);
       setShowAdd(false);
       toast(`${res.data.name} added to watchlist.`);
     },
@@ -45,11 +55,10 @@ export default function WatchlistPage() {
     return SECTORS;
   }, [form.sector]);
 
-  // Resolves what the user typed (name or ticker) to a real NSE symbol and auto-fills
-  // sector / price / 52-week high. Fired on blur of the Stock/symbol field.
-  const runLookup = async () => {
-    const q = form.name.trim();
-    if (q.length < 2 || looking || q.toLowerCase() === lastLookedUp.current.toLowerCase()) return;
+  // Resolve a name/ticker to a real NSE symbol and auto-fill sector / price / 52-week high.
+  const fillFromSymbol = async (query) => {
+    const q = String(query || '').trim();
+    if (q.length < 2 || q.toLowerCase() === lastLookedUp.current.toLowerCase()) return;
     lastLookedUp.current = q;
     setLooking(true);
     setLookupMsg(null);
@@ -72,6 +81,53 @@ export default function WatchlistPage() {
       setLooking(false);
     }
   };
+
+  // Fired on blur — only re-looks-up if the user typed and didn't pick from the dropdown.
+  const runLookup = () => {
+    if (pickedRef.current || looking) { pickedRef.current = false; return; }
+    fillFromSymbol(form.name);
+  };
+
+  // Debounced typeahead as the user types.
+  const onNameChange = (value) => {
+    setForm((f) => ({ ...f, name: value, symbol: '' }));
+    setLookupMsg(null);
+    setActiveIdx(-1);
+    clearTimeout(searchTimer.current);
+    const q = value.trim();
+    if (q.length < 2) { setResults([]); setShowResults(false); return; }
+    setSearching(true);
+    setShowResults(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const { data } = await api.get('/watchlist/search', { params: { q } });
+        setResults(data);
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 250);
+  };
+
+  const pickResult = (r) => {
+    pickedRef.current = true;
+    setShowResults(false);
+    setResults([]);
+    setActiveIdx(-1);
+    setForm((f) => ({ ...f, name: r.name, symbol: r.symbol }));
+    fillFromSymbol(r.symbol);
+  };
+
+  const onNameKeyDown = (e) => {
+    if (!showResults || !results.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); setActiveIdx((i) => Math.min(i + 1, results.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setActiveIdx((i) => Math.max(i - 1, 0)); }
+    else if (e.key === 'Enter' && activeIdx >= 0) { e.preventDefault(); pickResult(results[activeIdx]); }
+    else if (e.key === 'Escape') { setShowResults(false); }
+  };
+
+  useEffect(() => () => clearTimeout(searchTimer.current), []);
 
   const removeStock = useMutation({
     mutationFn: (id) => api.delete(`/watchlist/${id}`),
@@ -133,16 +189,45 @@ export default function WatchlistPage() {
         <form className="add-panel" onSubmit={submitAdd}>
           <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 12, color: 'var(--g9)' }}>Add stock to watchlist</div>
           <div className="add-grid">
-            <div className="fld">
+            <div className="fld" style={{ position: 'relative' }}>
               <label>Stock / symbol</label>
               <input
                 type="text"
-                placeholder="e.g. Infosys, WIPRO..."
+                placeholder="e.g. Tata, Infosys, WIPRO..."
                 value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                onBlur={runLookup}
+                autoComplete="off"
+                onChange={(e) => onNameChange(e.target.value)}
+                onKeyDown={onNameKeyDown}
+                onFocus={() => { if (results.length) setShowResults(true); }}
+                onBlur={() => { setTimeout(() => setShowResults(false), 150); runLookup(); }}
                 className={errors.name ? 'err' : ''}
               />
+              {showResults && (searching || results.length > 0) && (
+                <div
+                  style={{
+                    position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 20,
+                    background: '#fff', border: '1px solid var(--g2)', borderRadius: 8,
+                    marginTop: 4, boxShadow: '0 6px 20px rgba(0,0,0,.12)', maxHeight: 260, overflowY: 'auto',
+                  }}
+                >
+                  {searching && !results.length && <div style={{ padding: '10px 12px', fontSize: 12, color: 'var(--g4)' }}>Searching…</div>}
+                  {results.map((r, i) => (
+                    <div
+                      key={r.symbol}
+                      onMouseDown={(e) => { e.preventDefault(); pickResult(r); }}
+                      onMouseEnter={() => setActiveIdx(i)}
+                      style={{
+                        padding: '9px 12px', cursor: 'pointer', fontSize: 13,
+                        background: i === activeIdx ? 'var(--g0)' : '#fff',
+                        display: 'flex', justifyContent: 'space-between', gap: 10,
+                      }}
+                    >
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</span>
+                      <span style={{ color: 'var(--g4)', fontWeight: 700, flexShrink: 0 }}>{r.symbol}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               {looking && <div className="err-msg on" style={{ color: 'var(--g4)' }}>Looking up…</div>}
               {!looking && lookupMsg && (
                 <div className="err-msg on" style={{ color: lookupMsg.ok ? '#16a34a' : '#dc2626' }}>{lookupMsg.text}</div>
@@ -170,7 +255,7 @@ export default function WatchlistPage() {
             <button
               type="button"
               className="btn btn-lg"
-              onClick={() => { setShowAdd(false); setForm(EMPTY_FORM); setLookupMsg(null); setErrors({}); lastLookedUp.current = ''; }}
+              onClick={() => { setShowAdd(false); setForm(EMPTY_FORM); setLookupMsg(null); setErrors({}); lastLookedUp.current = ''; setResults([]); setShowResults(false); }}
             >
               Cancel
             </button>

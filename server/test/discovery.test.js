@@ -5,6 +5,7 @@ const { uptrend, flat, makeRows } = require('./helpers');
 const { assessLiquidity } = require('../src/services/discovery/liquidityFilter');
 const { rankSectors } = require('../src/services/sector/sectorRanking');
 const uni = require('../src/services/discovery/universe');
+const { searchSymbols } = require('../src/services/marketData/yahooFinance');
 
 // ---------- universe ----------
 test('universe: getUniverse returns {symbol,sector} entries; sectorOf + toYahoo work', () => {
@@ -16,6 +17,16 @@ test('universe: getUniverse returns {symbol,sector} entries; sectorOf + toYahoo 
   assert.equal(uni.toYahoo('M_M'), 'M&M.NS');       // override
   assert.equal(uni.toYahoo('BAJAJ_AUTO'), 'BAJAJ-AUTO.NS');
   assert.ok(uni.ALL_SECTORS.includes('Pharma'));
+});
+
+// ---------- symbol typeahead search ----------
+test('searchSymbols: <2 chars → empty; a common prefix → several {symbol,name} matches', async () => {
+  assert.deepEqual(await searchSymbols('t'), []);
+  const r = await searchSymbols('TATA'); // curated backfill covers this even with no network
+  assert.ok(r.length >= 3, `expected >=3 Tata matches, got ${r.length}`);
+  assert.ok(r.every((x) => x.symbol === x.symbol.toUpperCase() && typeof x.name === 'string'));
+  assert.ok(r.some((x) => x.symbol === 'TATASTEEL'));
+  assert.ok(!r.some((x) => x.symbol.includes('_'))); // internal keys not exposed
 });
 
 // ---------- liquidity filter ----------

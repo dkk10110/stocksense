@@ -87,4 +87,48 @@ async function lookupSymbol(query) {
   };
 }
 
-module.exports = { fetchDailyHistory, fetchLatestQuote, toNseTicker, lookupSymbol };
+/**
+ * Typeahead search — returns up to `limit` NSE-listed equities matching `query` on name or ticker
+ * (e.g. "tata" → Tata Motors / Tata Steel / TCS / Tata Elxsi …). Merges Yahoo's live search with a
+ * ticker-prefix match over the curated universe, since Yahoo caps its result set. Lightweight:
+ * name + symbol only — the caller does a full lookupSymbol() on the chosen one.
+ */
+async function searchSymbols(query, { limit = 10 } = {}) {
+  const raw = String(query || '').trim();
+  if (raw.length < 2) return [];
+  const qUpper = raw.toUpperCase();
+
+  const seen = new Set();
+  const out = [];
+  const add = (symbol, name) => {
+    const s = String(symbol).replace(/\.NS$/i, '').toUpperCase();
+    if (!s || seen.has(s)) return;
+    seen.add(s);
+    out.push({ symbol: s, name: name || s });
+  };
+
+  // 1. Yahoo live search — proper company names, whole-market coverage
+  try {
+    const search = await yf.search(raw, { newsCount: 0, quotesCount: 20, enableFuzzyQuery: true });
+    for (const q of search.quotes || []) {
+      if (!q.isYahooFinance || q.quoteType !== 'EQUITY') continue;
+      if (!(q.exchange === 'NSI' || String(q.symbol || '').endsWith('.NS'))) continue;
+      add(q.symbol, q.longname || q.shortname);
+    }
+  } catch {
+    // fall through to the curated match
+  }
+
+  // 2. Curated-universe ticker match — backfills common prefixes Yahoo truncates ("TATA…").
+  // Skip internal-key symbols with '_' (e.g. M_M, BAJAJ_AUTO) — Yahoo surfaces those by name.
+  try {
+    const { getUniverse } = require('../discovery/universe');
+    for (const { symbol } of getUniverse()) {
+      if (!symbol.includes('_') && symbol.toUpperCase().includes(qUpper)) add(symbol);
+    }
+  } catch { /* universe optional */ }
+
+  return out.slice(0, limit);
+}
+
+module.exports = { fetchDailyHistory, fetchLatestQuote, toNseTicker, lookupSymbol, searchSymbols };

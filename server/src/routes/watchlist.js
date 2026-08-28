@@ -1,7 +1,7 @@
 const express = require('express');
 const prisma = require('../lib/prisma');
 const { requireAuth } = require('../middleware/auth');
-const { lookupSymbol } = require('../services/marketData/yahooFinance');
+const { lookupSymbol, searchSymbols } = require('../services/marketData/yahooFinance');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -13,6 +13,17 @@ router.get('/', async (req, res) => {
     orderBy: { createdAt: 'asc' },
   });
   res.json(items);
+});
+
+// GET /api/watchlist/search?q=tata — typeahead: NSE equities matching name/ticker, [{ symbol, name }].
+router.get('/search', async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  try {
+    res.json(await searchSymbols(q));
+  } catch {
+    res.json([]);
+  }
 });
 
 // GET /api/watchlist/lookup?q=INFY — resolve a name/ticker to a real NSE symbol plus its
