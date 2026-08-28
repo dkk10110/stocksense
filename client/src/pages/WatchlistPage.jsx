@@ -10,7 +10,7 @@ const SECTORS = ['Auto', 'Banking', 'Defence', 'Energy', 'FMCG', 'IT', 'Pharma',
 const TYPE_LABEL = { compression: 'tag-pre', catalyst: 'tag-cat', fallen: 'tag-fall', earnings: 'tag-earn', volume: 'tag-vol' };
 const TYPE_TEXT = { compression: 'Pre-breakout setup', catalyst: 'Catalyst play', fallen: 'Fallen angel reversal', earnings: 'Earnings play', volume: 'Volume reversal' };
 
-const EMPTY_FORM = { name: '', symbol: '', sector: SECTORS[0], price: '', high: '' };
+const EMPTY_FORM = { name: '', symbol: '', sector: '', price: '', high: '' };
 
 export default function WatchlistPage() {
   const [showAdd, setShowAdd] = useState(false);
@@ -51,6 +51,7 @@ export default function WatchlistPage() {
   });
 
   const sectorOptions = useMemo(() => {
+    // any resolved sector not in our list (e.g. a raw Yahoo sector) gets shown too
     if (form.sector && !SECTORS.includes(form.sector)) return [form.sector, ...SECTORS];
     return SECTORS;
   }, [form.sector]);
@@ -73,7 +74,12 @@ export default function WatchlistPage() {
         high: data.high52w != null ? String(data.high52w) : f.high,
       }));
       setErrors({});
-      setLookupMsg({ ok: true, text: `Matched ${data.symbol} — details auto-filled. Edit any field if needed.` });
+      setLookupMsg({
+        ok: true,
+        text: data.sector
+          ? `Matched ${data.symbol} — details auto-filled. Edit any field if needed.`
+          : `Matched ${data.symbol} — price filled, but pick a sector (couldn't detect it).`,
+      });
     } catch (err) {
       setForm((f) => ({ ...f, symbol: '' }));
       setLookupMsg({ ok: false, text: err.response?.data?.error || 'Lookup failed — enter the details manually.' });
@@ -139,9 +145,10 @@ export default function WatchlistPage() {
     const priceNum = parseFloat(form.price);
     const highNum = form.high !== '' ? parseFloat(form.high) : null;
     const nameOk = !!form.name.trim();
+    const sectorOk = !!form.sector;
     const priceOk = form.price !== '' && priceNum > 0;
-    setErrors({ name: !nameOk, price: !priceOk });
-    if (!nameOk || !priceOk) return;
+    setErrors({ name: !nameOk, sector: !sectorOk, price: !priceOk });
+    if (!nameOk || !sectorOk || !priceOk) return;
     addStock.mutate({
       name: form.name.trim(),
       sector: form.sector,
@@ -235,10 +242,16 @@ export default function WatchlistPage() {
               {!looking && !lookupMsg && errors.name && <div className="err-msg on">Enter a stock name.</div>}
             </div>
             <div className="fld">
-              <label>Sector{form.symbol ? ' · auto' : ''}</label>
-              <select value={form.sector} onChange={(e) => setForm({ ...form, sector: e.target.value })}>
-                {sectorOptions.map((s) => <option key={s}>{s}</option>)}
+              <label>Sector{form.symbol && form.sector ? ' · auto' : ''}</label>
+              <select
+                value={form.sector}
+                onChange={(e) => { setForm({ ...form, sector: e.target.value }); setErrors((x) => ({ ...x, sector: false })); }}
+                className={errors.sector ? 'err' : ''}
+              >
+                <option value="">— select sector —</option>
+                {sectorOptions.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
+              {errors.sector && <div className="err-msg on">Pick a sector.</div>}
             </div>
             <div className="fld">
               <label>Current price (₹){form.symbol ? ' · auto' : ''}</label>

@@ -36,6 +36,7 @@ const CURATED = {
   // Energy / Oil & Gas
   RELIANCE: 'Energy', ONGC: 'Energy', IOC: 'Energy', BPCL: 'Energy', GAIL: 'Energy',
   HINDPETRO: 'Energy', PETRONET: 'Energy', OIL: 'Energy', ADANIGREEN: 'Renewables', TATAPOWER: 'Renewables',
+  'ORIANA-SM': 'Renewables', SUZLON: 'Renewables', INOXWIND: 'Renewables', WAAREEENER: 'Renewables', PREMIERENE: 'Renewables',
   NTPC: 'Power', POWERGRID: 'Power', ADANIPOWER: 'Power', JSWENERGY: 'Power', NHPC: 'Power',
   // Metals & Mining
   TATASTEEL: 'Steel', JSWSTEEL: 'Steel', HINDALCO: 'Steel', SAIL: 'Steel', JINDALSTEL: 'Steel',

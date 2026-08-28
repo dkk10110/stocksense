@@ -48,6 +48,31 @@ const YAHOO_SECTOR_MAP = {
   'Consumer Cyclical': 'Auto',
 };
 
+// Industry-keyword fallback when Yahoo gives an industry but no sector (common for SME stocks).
+const INDUSTRY_KEYWORDS = [
+  [/solar|renewable|wind|power|electric|utilit/i, 'Renewables'],
+  [/oil|gas|petroleum|coal|energy|refin/i, 'Energy'],
+  [/bank|financ|nbfc|lending|insurance|capital market/i, 'Banking'],
+  [/pharma|drug|biotech|healthcare|hospital|medic/i, 'Pharma'],
+  [/software|it services|information technology|semiconductor|internet/i, 'IT'],
+  [/auto|vehicle|automobile|tyre|two.?wheeler/i, 'Auto'],
+  [/steel|metal|iron|aluminium|mining|zinc|copper/i, 'Steel'],
+  [/cement|construction|infrastructure|engineering|capital goods/i, 'PSU Infra'],
+  [/defen[cs]e|aerospace|shipbuild|arms/i, 'Defence'],
+  [/food|beverage|fmcg|consumer|packaged|tobacco|household/i, 'FMCG'],
+  [/chemical|fertiliz|agrochem|specialty chem/i, 'Chemicals'],
+];
+
+function inferSector(rawSector, industry, curatedSector) {
+  if (rawSector) return YAHOO_SECTOR_MAP[rawSector] || rawSector;
+  if (curatedSector && curatedSector !== 'Unknown') return curatedSector;
+  if (industry) {
+    const hit = INDUSTRY_KEYWORDS.find(([re]) => re.test(industry));
+    if (hit) return hit[1];
+  }
+  return null;
+}
+
 /**
  * Resolves a user-typed stock name or ticker to a real NSE symbol plus its current
  * name / sector / price / 52-week high, via Yahoo Finance. Throws if nothing matches.
@@ -71,17 +96,19 @@ async function lookupSymbol(query) {
 
   const [quote, summary] = await Promise.all([
     yf.quote(nseTicker),
-    yf.quoteSummary(nseTicker, { modules: ['assetProfile'] }).catch(() => null),
+    yf.quoteSummary(nseTicker, { modules: ['assetProfile', 'summaryProfile'] }).catch(() => null),
   ]);
   if (!quote || quote.regularMarketPrice == null) throw new Error(`No market data for "${raw}"`);
 
   const symbol = String(quote.symbol).replace(/\.NS$/i, '');
-  const yahooSector = summary?.assetProfile?.sector || null;
+  const profile = summary?.assetProfile || summary?.summaryProfile || {};
+  let curatedSector = null;
+  try { curatedSector = require('../discovery/universe').sectorOf(symbol); } catch { /* optional */ }
 
   return {
     symbol,
     name: quote.longName || quote.shortName || quote.displayName || symbol,
-    sector: yahooSector ? YAHOO_SECTOR_MAP[yahooSector] || yahooSector : null,
+    sector: inferSector(profile.sector || null, profile.industry || null, curatedSector),
     price: Number(quote.regularMarketPrice.toFixed(2)),
     high52w: quote.fiftyTwoWeekHigh != null ? Number(quote.fiftyTwoWeekHigh.toFixed(2)) : null,
   };
