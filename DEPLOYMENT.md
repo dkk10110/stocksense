@@ -71,7 +71,7 @@ Data flow: browser → Vercel (static React) → `https://stocksense-ghq8.onrend
 | Key | Enables |
 |-----|---------|
 | `ANGEL_ONE_API_KEY`, `ANGEL_ONE_CLIENT_CODE`, `ANGEL_ONE_PASSWORD`, `ANGEL_ONE_TOTP_SECRET` | live intraday price + India VIX (daily data & VIX already work via Yahoo Finance without this) |
-| `NEWS_API_KEY`        | catalyst-countdown detector / news sentiment (not yet built) |
+| `NEWS_PROVIDER` (opt) | news feed for catalyst detector / news sentiment — default `google` (keyless, works in prod); `marketaux` or `newsapi` need their own key |
 | `ANTHROPIC_API_KEY`   | real Claude "why buy now" text (falls back to a rule-based template without it) |
 | `WHATSAPP_TO` + `WHATSAPP_PROVIDER` + (`WHATSAPP_PHONE_NUMBER_ID`/`WHATSAPP_ACCESS_TOKEN` for Cloud API, or `TWILIO_*` for Twilio) | real WhatsApp alert delivery (alerts still write to the in-app Alerts screen without it). See `dependancy/DEPENDENCIES.md` #3 |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | password-reset emails (logs the reset link to server console without it) |

@@ -52,7 +52,7 @@ async function processSymbol(symbol, shared) {
   // News-derived inputs — all no-op gracefully when NewsAPI / the AI layer isn't configured.
   const name = (await resolveNameAndSector(symbol)).name;
   const articles = newsApiConfigured()
-    ? await bestEffort(fetchRecentArticles(`${name} OR ${symbol} stock NSE`), 'news', symbol)
+    ? await bestEffort(fetchRecentArticles(`${name} ${symbol} stock`, { symbol }), 'news', symbol)
     : null;
   const newsSentiment = await bestEffort(scoreNewsSentiment(symbol, articles), 'news sentiment', symbol);
   const dropClassification = await bestEffort(classifyDrop(symbol, articles), 'drop classification', symbol);

@@ -41,7 +41,7 @@ async function runMorningRescore() {
     if (newsApiConfigured()) {
       if (!sentimentBySymbol.has(signal.symbol)) {
         try {
-          const articles = await fetchRecentArticles(`${signal.name} OR ${signal.symbol} stock NSE`);
+          const articles = await fetchRecentArticles(`${signal.name} ${signal.symbol} stock`, { symbol: signal.symbol });
           sentimentBySymbol.set(signal.symbol, scoreNewsIntelligence(await scoreNewsSentiment(signal.symbol, articles)));
         } catch (e) {
           console.log(`  [${signal.symbol}] news re-scan failed: ${e.message}`);

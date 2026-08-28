@@ -6,6 +6,7 @@ const { assessLiquidity } = require('../src/services/discovery/liquidityFilter')
 const { rankSectors } = require('../src/services/sector/sectorRanking');
 const uni = require('../src/services/discovery/universe');
 const { searchSymbols } = require('../src/services/marketData/yahooFinance');
+const news = require('../src/services/marketData/newsApi');
 
 // ---------- universe ----------
 test('universe: getUniverse returns {symbol,sector} entries; sectorOf + toYahoo work', () => {
@@ -27,6 +28,13 @@ test('searchSymbols: <2 chars → empty; a common prefix → several {symbol,nam
   assert.ok(r.every((x) => x.symbol === x.symbol.toUpperCase() && typeof x.name === 'string'));
   assert.ok(r.some((x) => x.symbol === 'TATASTEEL'));
   assert.ok(!r.some((x) => x.symbol.includes('_'))); // internal keys not exposed
+});
+
+// ---------- news provider switch ----------
+test('news: defaults to the google provider and needs no key', () => {
+  assert.equal(news.PROVIDER, 'google');       // NEWS_PROVIDER unset in tests
+  assert.equal(news.isConfigured(), true);      // google/yahoo need no key
+  assert.equal(typeof news.fetchRecentArticles, 'function');
 });
 
 // ---------- liquidity filter ----------

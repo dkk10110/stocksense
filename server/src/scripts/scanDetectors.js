@@ -33,7 +33,7 @@ async function scanSymbol(symbol) {
   const nextResultsDate = await bestEffort(fetchNextResultsDate(symbol), 'results date (NSE calendar)', symbol);
 
   const articles = newsApiConfigured()
-    ? await bestEffort(fetchRecentArticles(`${symbol} stock NSE`), 'news (NewsAPI)', symbol)
+    ? await bestEffort(fetchRecentArticles(`${symbol} stock`, { symbol }), 'news', symbol)
     : null;
   const catalystEvent = await bestEffort(extractCatalystEvent(symbol, articles), 'catalyst extraction (AI)', symbol);
   const dropClassification = await bestEffort(classifyDrop(symbol, articles), 'drop classification (AI)', symbol);

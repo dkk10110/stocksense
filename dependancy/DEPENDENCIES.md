@@ -38,33 +38,39 @@ After adding keys locally, restart `npm run dev`. On Render, a redeploy picks th
 | Fallen-angel gate 3 ("drop is external, not business") | §2.3 | Gate stays `pending`, doesn't block | AI classifies the drop; blocks a signal if the drop is business deterioration |
 | Catalyst-countdown dated-event extraction | §2.2 | **No catalyst signals generated at all** | Claude pulls "FDA decision in 9 days" style dated events out of news text |
 
-> The news-intelligence layer and catalyst detector **also** need NewsAPI (#2) —
-> Claude classifies/scores the articles that NewsAPI supplies.
+> The news-intelligence layer and catalyst detector need a news feed (#2) — but the
+> default (Google News RSS) needs no key, so in practice only this Anthropic key is
+> required to turn them on. Claude classifies/scores the articles the feed supplies.
 
 **Code touch points:** `server/src/services/ai/*` (`client.js`, `explainSignal.js`,
 `newsSentiment.js`, `classifyDrop.js`, `extractCatalystEvent.js`).
 
 ---
 
-## 2. NewsAPI.org key
+## 2. News feed — **no key needed** (default: Google News RSS)
 
-- **Env var:** `NEWS_API_KEY`
-- **Cost:** Free tier — 100 requests/day (enough for ~30 tracked stocks once/day)
-- **Get it:** https://newsapi.org/register → confirm email → copy the API key from the dashboard.
+The news feed powers the catalyst detector + the news-sentiment scoring layer. It's a
+**provider switch** (`NEWS_PROVIDER`), and the default needs no account:
 
-**Unlocks** (needs Anthropic key #1 too, to interpret the articles):
+| `NEWS_PROVIDER` | Key | Notes |
+|---|---|---|
+| **`google`** (default) | none | Google News RSS. Free, works in production, good NSE/BSE coverage. **Nothing to set up.** |
+| `marketaux` | `MARKETAUX_API_KEY` | marketaux.com free tier — finance-specific (ticker-tagged, built-in sentiment). Free key at https://www.marketaux.com/account/dashboard. Optional upgrade for deeper coverage. |
+| `newsapi` | `NEWS_API_KEY` | newsapi.org. Free key is **development-only** — blocked on deployed servers; paid plan is ~$449/mo. Not recommended for production. |
+| `yahoo` | none | Yahoo Finance search news. Free but weak coverage for Indian stocks. |
 
-| Feature | PRD ref | Without it | With it |
+**So: this dependency is already satisfied.** Just make sure `NEWS_PROVIDER` is unset
+(or `=google`) on Render.
+
+**Unlocks** (still needs Anthropic key #1 to *interpret* the articles):
+
+| Feature | PRD ref | Without Anthropic key | With it |
 |---|---|---|---|
 | Catalyst-countdown detector (5th signal type) | §2.2 | Not generated | Runs: dated event 7–14 days out + RSI < 65 + FII/DII accumulation |
-| Catalyst 7-day / 1-day held-position alerts | §8 | Never fire (no catalyst signals exist) | Fire from `catalystDate` on the position |
+| Catalyst 7-day / 1-day held-position alerts | §8 | Never fire | Fire from `catalystDate` on the position |
 | News-sentiment scoring layer | §5.3 #2 | Neutral 50 | Real sentiment |
 | Fallen-angel "external drop" gate | §2.3 | Pending | Evaluated |
 | Morning re-score news re-scan | §5.2 | Skipped | Re-scores sentiment pre-open, adjusts confidence |
-
-**Free-tier caveat:** NewsAPI's free plan only returns articles up to ~1 month old
-and blocks some params on `/v2/everything`. Fine for this use. If you hit the
-100/day limit, reduce the tracked-symbol list or cache.
 
 **Code touch points:** `server/src/services/marketData/newsApi.js`,
 `server/src/services/detectors/catalystCountdown.js`.
@@ -163,19 +169,23 @@ is written to the server log (the flow still works end-to-end for a solo user).
 - **Env var:** `TRACKED_SYMBOLS` — comma-separated NSE tickers, e.g. `BHEL,SUNPHARMA,HAL,SBIN`
 - Overrides the built-in default universe (`server/src/services/marketData/trackedSymbols.js`).
   User watchlist + active-signal symbols are always unioned on top.
-- Keep the count near ~20–30 to stay inside the NewsAPI free-tier 100/day limit
-  (each symbol = ~1 news call per scan).
+- Keep the count near ~20–30 — mainly to bound the per-scan Claude spend (each symbol
+  = ~1 news-sentiment + 1 drop-classification + 1 catalyst-extraction call when the
+  Anthropic key is set).
 
 ---
 
 ## Priority order
 
-1. **Anthropic key** (#1) + **NewsAPI key** (#2) — together these light up the entire
-   news/AI half: catalyst signal type, catalyst alerts, news scoring layer,
-   fallen-angel gate 3, live "why buy now" text, morning news re-scan.
+1. **Anthropic key** (#1) — the only credential that gates the news/AI half now that
+   the news feed (#2) defaults to keyless Google News RSS. Lights up: catalyst signal
+   type, catalyst alerts, news scoring layer, fallen-angel gate 3, live "why buy now"
+   text, morning news re-scan.
 2. **WhatsApp** (#3) — makes alerts reach your phone.
 3. **Angel One** (#4) — sharpens intraday price/alert accuracy.
 4. **SMTP** (#5) — only matters if others will use the app and self-serve resets.
+5. **News feed (#2)** — already satisfied by the default; only revisit if you want
+   marketaux's ticker-tagged sentiment.
 
 ---
 

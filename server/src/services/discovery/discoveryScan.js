@@ -156,7 +156,7 @@ async function runDiscoveryScan({ skipIngest = false } = {}) {
     for (const c of shortlist) {
       const { rows } = bySymbol.get(c.symbol);
       const fundamentals = await fetchFundamentals(c.symbol).catch(() => null);
-      const articles = newsApiConfigured() ? await fetchRecentArticles(`${c.symbol} stock NSE`).catch(() => null) : null;
+      const articles = newsApiConfigured() ? await fetchRecentArticles(`${c.symbol} stock`, { symbol: c.symbol }).catch(() => null) : null;
       const newsSentiment = await scoreNewsSentiment(c.symbol, articles).catch(() => null);
 
       const rescored = scoreV4(c.detection, {

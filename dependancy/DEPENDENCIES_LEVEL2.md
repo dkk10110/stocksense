@@ -5,7 +5,7 @@ _Last updated: 2026-08-27_
 Everything in the **v4.0 Functional Requirements Document** is now implemented at the
 code level. This file lists what each v4 module needs from the outside world to run
 at full fidelity, and what it falls back to today. Read `DEPENDENCIES.md` first — the
-v3 credentials (Anthropic, NewsAPI, WhatsApp, Angel One, SMTP) are shared.
+v3 credentials (Anthropic, WhatsApp, Angel One, SMTP; the news feed is keyless by default) are shared.
 
 The v4 engines all **run today with zero new credentials** — they degrade to
 deterministic-only scoring, a curated universe, and template narratives.
@@ -69,10 +69,10 @@ sector ranking + market breadth + 12-stock shortlist produced in ~26 s (FRD budg
 - **Now:** the sector model scores on **Relative Strength (40%), Momentum (30%),
   Volume (20%), Breadth (10%)** — all deterministic. News / Policy are listed in
   `breakdown.pendingInputs` and carry no weight.
-- **To add them:** NewsAPI key (#2 in `DEPENDENCIES.md`) + the Anthropic key for an
-  AI pass that scores sector-level news/policy sentiment, then fold two more weighted
-  components into `sectorRanking.WEIGHTS`.
-- **Cost:** covered by the existing NewsAPI free tier + ~₹ of Claude usage.
+- **To add them:** the Anthropic key (the news feed is keyless by default — #2 in
+  `DEPENDENCIES.md`) for an AI pass that scores sector-level news/policy sentiment,
+  then fold two more weighted components into `sectorRanking.WEIGHTS`.
+- **Cost:** ~₹ of Claude usage; the Google News feed itself is free.
 
 ---
 
@@ -116,6 +116,7 @@ sector ranking + market breadth + 12-stock shortlist produced in ~26 s (FRD budg
 | Var | Default | Effect |
 |---|---|---|
 | `TRACKED_SYMBOLS` | built-in list | (v3) tracked-pipeline universe |
+| `NEWS_PROVIDER` | `google` | news feed: `google` (keyless) \| `marketaux` (+`MARKETAUX_API_KEY`) \| `newsapi` (+`NEWS_API_KEY`) \| `yahoo` |
 | `DISCOVERY_SHORTLIST` | `12` | how many stocks the discovery scan shortlists |
 | `DISCOVERY_PROMOTE_CONFIDENCE` | `70` | shortlist entries at/above this v4 confidence become real `Signal` rows (`fromDiscovery=true`) and enter the Signals feed + paper-trading pipeline |
 | `NARRATIVE_MIN_CONFIDENCE` | `70` | v4 confidence at/above which the AI narrative is generated (below → template) |
@@ -132,7 +133,7 @@ shortlist entries.
 ## Priority order for Level-2
 
 1. **Nothing** — the v4 engines are fully functional deterministically today.
-2. **`ANTHROPIC_API_KEY` + `NEWS_API_KEY`** (already the v3 priority) — turns on real
+2. **`ANTHROPIC_API_KEY`** (the news feed is keyless by default) — turns on real
    narratives, news-weighted sector scoring, and the news-intelligence scoring layer.
 3. **Full NSE universe** (§1) — the single biggest fidelity gain: scan 2,000 names
    instead of ~160. Needs a residential-IP fetch or a vendor instrument list.
